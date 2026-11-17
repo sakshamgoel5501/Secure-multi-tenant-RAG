@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    "uvicorn",
+    "pyjwt",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+real = [
+    "asyncpg",
+    "qdrant-client",
+    "fastembed",
+    "google-genai",
+    "redis",
+]
+load = ["locust"]
+agent = ["mcp>=1.2,<2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "src"
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["asyncpg", "asyncpg.*", "fastembed", "fastembed.*", "google", "google.*", "qdrant_client", "qdrant_client.*", "mcp", "mcp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["redis", "redis.*"]
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+
+[project.scripts]
+rag = "cli.main:main"
+
+
+
+

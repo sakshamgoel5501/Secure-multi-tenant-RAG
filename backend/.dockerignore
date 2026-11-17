@@ -1,0 +1,12 @@
+venv/
+.git/
+qdrant_data/
+.model_cache/
+data/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.env
+
+
