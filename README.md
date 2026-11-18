@@ -154,6 +154,21 @@ rag test --all                          # pytest, mypy --strict, ruff
 
 Only one server can run at a time with embedded Qdrant.
 
+## Frontend
+
+`frontend/` is a Next.js app (App Router, Tailwind, shadcn/ui). The browser never calls the
+backend directly: route handlers in `frontend/src/app/api/` hold the JWT secret and admin key,
+mint a 5-minute token for the chosen demo persona, and proxy the call.
+
+```bash
+cd backend && rag serve --jwt --admin     # terminal 1
+cd frontend && npm run dev                # terminal 2, http://localhost:3000
+```
+
+`frontend/.env.local` needs `BACKEND_URL`, `RAG_JWT_SECRET` (same as the backend) and
+`RAG_ADMIN_KEY`. Setting `APP_ACCESS_PASSWORD` puts a password screen in front of the whole UI
+(`frontend/src/middleware.ts`). The persona picker is a demo identity switcher, not authentication.
+
 ## Layout
 
 | Path | Contents |
