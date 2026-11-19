@@ -26,8 +26,8 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r bg-card/40">
       <Link href="/" className="px-5 py-5">
-        <div className="text-sm font-semibold tracking-tight">Secure RAG</div>
-        <div className="text-xs text-muted-foreground">multi-tenant retrieval</div>
+        <div className="text-lg font-semibold tracking-tight">Vault</div>
+        {/* <div className="text-xs text-muted-foreground">secure retrieval</div> */}
       </Link>
 
       <nav className="flex-1 space-y-0.5 px-3">

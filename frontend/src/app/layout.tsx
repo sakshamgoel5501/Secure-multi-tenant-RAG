@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
-  title: "Secure RAG",
+  title: "Vault",
   description: "Multi-tenant retrieval with authorization enforced at query time",
 };
 

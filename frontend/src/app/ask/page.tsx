@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePersona } from "@/components/persona-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,19 +76,21 @@ export default function AskPage() {
   const { persona } = usePersona();
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AskResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<{
+    personaId: string | undefined;
+    result: AskResult | null;
+    error: string | null;
+  }>({ personaId: undefined, result: null, error: null });
 
-  useEffect(() => {
-    setResult(null);
-    setError(null);
-  }, [persona?.id]);
+  // Results belong to the persona that asked. After a switch they are simply not shown.
+  const current = state.personaId === persona?.id ? state : { ...state, result: null, error: null };
+  const { result, error } = current;
 
   async function submit(q: string = question) {
     if (!q.trim() || loading) return;
+    const forPersona = persona?.id;
     setLoading(true);
-    setError(null);
-    setResult(null);
+    setState({ personaId: forPersona, result: null, error: null });
     try {
       const r = await fetch("/api/ask", {
         method: "POST",
@@ -96,10 +98,13 @@ export default function AskPage() {
         body: JSON.stringify({ question: q }),
       });
       const body = await r.json();
-      if (!r.ok) setError(body.error ?? `Request failed (${r.status})`);
-      else setResult(body as AskResult);
+      setState(
+        r.ok
+          ? { personaId: forPersona, result: body as AskResult, error: null }
+          : { personaId: forPersona, result: null, error: body.error ?? `Request failed (${r.status})` },
+      );
     } catch {
-      setError("Could not reach the frontend server.");
+      setState({ personaId: forPersona, result: null, error: "Could not reach the frontend server." });
     } finally {
       setLoading(false);
     }

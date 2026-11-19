@@ -43,9 +43,10 @@ export default function HomePage() {
 
   return (
     <div className="space-y-10">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Secure RAG</h1>
-        <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+      <header className="space-y-3 pt-6 mb-20 text-center">
+        <h1 className="text-5xl font-semibold tracking-tight">Vault</h1>
+        <p className="text-sm font-medium text-muted-foreground">Secure RAG · multi-tenant retrieval</p>
+        <p className="mx-auto max-w-xl text-sm leading-relaxed text-muted-foreground">
           Question answering over multi-tenant documents, built so that an eventually consistent
           search index can never become a security hole. Authorization is enforced at query time from
           authoritative state.

@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   async function submit() {
     const r = await fetch("/api/login", {
@@ -13,14 +15,17 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    if (r.ok) window.location.href = "/";
+    if (r.ok) {
+      router.push("/");
+      router.refresh(); // re-run the middleware with the new cookie
+    }
     else setError("Wrong password.");
   }
 
   return (
     <div className="mx-auto mt-32 max-w-xs space-y-4">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">Secure RAG</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Vault</h1>
         <p className="text-sm text-muted-foreground">Enter the access password to continue.</p>
       </div>
       <input

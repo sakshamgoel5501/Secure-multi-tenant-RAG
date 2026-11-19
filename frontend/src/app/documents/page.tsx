@@ -20,22 +20,21 @@ export default function DocumentsPage() {
   const [saved, setSaved] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setSaved({});
-    const r = await fetch(`/api/admin/documents?tenant=${tenant}`);
-    const body = await r.json().catch(() => null);
-    if (!r.ok) {
-      setDocs([]);
-      setError(body?.error ?? `Request failed (${r.status})`);
-      return;
-    }
-    setDocs(body.documents);
-  }, [tenant]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    fetch(`/api/admin/documents?tenant=${tenant}`)
+      .then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => null) }))
+      .then(({ ok, status, body }) => {
+        if (cancelled) return;
+        if (!ok) {
+          setDocs([]);
+          setError(body?.error ?? `Request failed (${status})`);
+        } else setDocs(body.documents);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenant]);
 
   async function toggle(doc: Doc, group: string) {
     if (saving) return; // one change at a time, so epochs stay easy to follow
@@ -78,7 +77,16 @@ export default function DocumentsPage() {
 
       <div className="flex gap-2">
         {TENANTS.map((t) => (
-          <Button key={t} size="sm" variant={t === tenant ? "default" : "outline"} onClick={() => setTenant(t)}>
+          <Button
+            key={t}
+            size="sm"
+            variant={t === tenant ? "default" : "outline"}
+            onClick={() => {
+              setTenant(t);
+              setError(null);
+              setSaved({});
+            }}
+          >
             {t}
           </Button>
         ))}
