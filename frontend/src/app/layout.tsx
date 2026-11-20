@@ -3,6 +3,7 @@ import "./globals.css";
 import { PersonaProvider } from "@/components/persona-provider";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Vault",
@@ -16,7 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <PersonaProvider>
             <div className="flex min-h-screen">
-              <Sidebar />
+              <Suspense fallback={<aside className="sticky top-0 h-screen w-60 shrink-0 border-r bg-card/40" />}>
+                <Sidebar />
+              </Suspense>
               <main className="min-w-0 flex-1 px-10 py-8">
                 <div className="mx-auto max-w-5xl">{children}</div>
               </main>
