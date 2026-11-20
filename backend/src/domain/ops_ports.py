@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Protocol
 
-from domain.models import DocumentId, DocumentState, GroupId, TenantId
+from domain.models import DocumentEvent, DocumentId, DocumentState, GroupId, TenantId
 
 
 class StateScanner(Protocol):
@@ -46,3 +46,12 @@ class DeadLetterInspector(Protocol):
     async def pending_count(self) -> int: ...
 
     async def dlq_entries(self) -> list[dict[str, str]]: ...
+
+
+class EventPublisher(Protocol):
+    """Puts a document event on the bus (the same path `rag load` uses)."""
+
+    async def publish(self, event: DocumentEvent) -> str: ...
+
+
+    

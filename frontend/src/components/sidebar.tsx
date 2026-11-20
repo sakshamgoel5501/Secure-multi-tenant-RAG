@@ -1,6 +1,8 @@
 "use client";
 
-import { Activity, FileText, Home, ListChecks, MessageSquare, ShieldCheck, Sparkles, User } from "lucide-react";
+import {
+  Activity, FileText, GitBranch, Home, ListChecks, MessageSquare, ShieldCheck, Sparkles, Upload, User,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePersona } from "@/components/persona-provider";
@@ -11,6 +13,8 @@ const NAV = [
   { href: "/ask", label: "Ask", icon: MessageSquare, ready: true },
   { href: "/identity", label: "Identity", icon: User, ready: true },
   { href: "/documents", label: "Documents", icon: FileText, ready: true },
+  { href: "/upload", label: "Upload", icon: Upload, ready: true },
+  { href: "/lifecycle", label: "Lifecycle", icon: GitBranch, ready: true },
   { href: "/security", label: "Security", icon: ShieldCheck, ready: true },
   { href: "/operations", label: "Operations", icon: Activity, ready: true },
   { href: "/evaluation", label: "Evaluation", icon: ListChecks, ready: true },

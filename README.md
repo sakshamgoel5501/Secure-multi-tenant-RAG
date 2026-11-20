@@ -160,6 +160,8 @@ Only one server can run at a time with embedded Qdrant.
 backend directly: route handlers in `frontend/src/app/api/` hold the JWT secret and admin key,
 mint a 5-minute token for the chosen demo persona, and proxy the call.
 
+“The Lifecycle page demonstrates versions, tombstones and out-of-order events on a throwaway document.”
+
 ```bash
 cd backend && rag serve --jwt --admin     # terminal 1
 cd frontend && npm run dev                # terminal 2, http://localhost:3000

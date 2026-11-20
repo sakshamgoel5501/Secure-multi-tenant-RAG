@@ -159,6 +159,7 @@ if ADMIN_KEY is not None:
             bus,
             admin_key=ADMIN_KEY,
             data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
+            publisher=bus,
         )
     )
     print("[startup] admin API mounted at /admin (X-Admin-Key required)")

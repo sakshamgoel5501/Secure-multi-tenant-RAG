@@ -86,6 +86,26 @@ Treat it as a data-flow problem, not something the model is trusted to notice.
 
 Proven by `backend/tests/test_answer_service.py` and `backend/tests/test_mcp_server.py`.
 
+## Why not one knowledge base per tenant?
+
+Per-tenant collections ("silos") are a valid design. They isolate more strongly, keep BM25
+statistics clean, and make deleting a tenant trivial. They cost more as tenants multiply: every
+collection carries memory and operational overhead, and an embedding-model upgrade must be rolled
+out once per tenant. This project uses one pool with a mandatory tenant filter, and the vector
+store sits behind a port, so mapping large tenants to dedicated collections is a single adapter
+change.
+
+Silos would only replace the tenant filter. Group-level access inside a tenant, versioned updates,
+immediate deletes and unordered events would all remain, and those are what the commit point in
+Postgres exists for.
+
+## Lifecycle demo
+
+`backend/src/serving/admin.py` can create documents, publish new versions, delete them, and publish
+events in a hostile order (late versions, updates after a delete, a delayed update). The
+`frontend/src/app/lifecycle/page.tsx` page shows the authoritative state next to what a search
+returns, so a stale or half-written version can be seen failing to appear.
+
 ## Decisions and trade-offs
 
 | Decision | Alternative | Why |

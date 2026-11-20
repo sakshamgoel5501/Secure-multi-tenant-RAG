@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GROUPS, TENANTS } from "@/lib/personas";
+import Link from "next/link";
 
 type Doc = {
   document_id: string;
@@ -108,7 +109,11 @@ export default function DocumentsPage() {
           <tbody>
             {docs.map((d) => (
               <tr key={d.document_id} className="h-16 border-b last:border-0">
-                <td className="px-4 font-mono text-xs">{d.document_id}</td>
+                <td className="px-4 font-mono text-xs">
+                  <Link href={`/documents/${d.document_id}?tenant=${tenant}`} className="underline-offset-4 hover:underline">
+                    {d.document_id}
+                  </Link>
+                </td>
                 <td className="px-4">
                   <Badge variant={d.status === "active" ? "secondary" : "outline"}>{d.status}</Badge>
                 </td>

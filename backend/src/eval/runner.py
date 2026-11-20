@@ -196,6 +196,8 @@ async def audit_permissions(
         bad: list[str] = []
         for h in hits:
             doc = owner.get(str(h["document_id"]))
+            if doc is None and str(h["document_id"]).startswith("u-"):
+                continue  # uploaded through the UI: no ground truth in the corpus
             if doc is None or doc.tenant_id != tenant or group not in doc.groups:
                 bad.append(f"{tenant}/{group} saw {h['document_id']}")
         return bad
