@@ -24,22 +24,29 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const refresh = useCallback(async () => {
-    const r = await fetch(`/api/admin/documents/${id}?tenant=${tenant}`).catch(() => null);
-    const body = await r?.json().catch(() => null);
-    if (!r || !r.ok) {
-      setError(body?.error ?? "Could not load the document.");
-      return;
-    }
-    setError(null);
-    setDetail(body);
-  }, [id, tenant]);
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
 
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 2000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    let cancelled = false;
+    async function load() {
+      const r = await fetch(`/api/admin/documents/${id}?tenant=${tenant}`).catch(() => null);
+      const body = await r?.json().catch(() => null);
+      if (cancelled) return;
+      if (!r || !r.ok) {
+        setError(body?.error ?? "Could not load the document.");
+        return;
+      }
+      setError(null);
+      setDetail(body);
+    }
+    load();
+    const t = setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [id, tenant, tick]);
 
   async function publish() {
     setBusy(true);
