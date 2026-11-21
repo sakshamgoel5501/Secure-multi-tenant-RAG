@@ -169,7 +169,7 @@ cd frontend && npm run dev                # terminal 2, http://localhost:3000
 
 `frontend/.env.local` needs `BACKEND_URL`, `RAG_JWT_SECRET` (same as the backend) and
 `RAG_ADMIN_KEY`. Setting `APP_ACCESS_PASSWORD` puts a password screen in front of the whole UI
-(`frontend/src/middleware.ts`). The persona picker is a demo identity switcher, not authentication.
+(`frontend/src/proxy.ts`). The persona picker is a demo identity switcher, not authentication.
 
 ## Layout
 
