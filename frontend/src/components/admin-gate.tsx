@@ -32,22 +32,24 @@ export function AdminGate({ need = "admin", children }: { need?: Need; children:
     };
   }, []);
 
-  if (!persona || !probe) return <p className="text-sm text-muted-foreground">Checking access…</p>;
+  const checking = !persona || !probe;
 
   let problem: string | null = null;
   let action: React.ReactNode = null;
-  if (!persona.admin) {
-    problem = "This page changes documents, so it needs the Administrator identity.";
-    action = (
-      <Button size="sm" onClick={() => select("admin")}>
-        Switch to Administrator
-      </Button>
-    );
-  } else if (probe.error) {
-    problem = probe.error;
-  } else if (need !== "admin" && !probe.caps?.[need]) {
-    problem =
-      "The running backend doesn't support this yet. Restart it with the latest code: `rag serve --jwt --admin`.";
+  if (persona && probe) {
+    if (!persona.admin) {
+      problem = "This page changes documents, so it needs the Administrator identity.";
+      action = (
+        <Button size="sm" onClick={() => select("admin")}>
+          Switch to Administrator
+        </Button>
+      );
+    } else if (probe.error) {
+      problem = probe.error;
+    } else if (need !== "admin" && !probe.caps?.[need]) {
+      problem =
+        "The running backend doesn't support this yet. Restart it with the latest code: `rag serve --jwt --admin`.";
+    }
   }
 
   if (problem) {
@@ -60,7 +62,12 @@ export function AdminGate({ need = "admin", children }: { need?: Need; children:
       </Card>
     );
   }
-  return <>{children}</>;
-}
 
+  return (
+    <>
+      {checking && <p className="text-sm text-muted-foreground">Checking access…</p>}
+      <div hidden={checking}>{children}</div>
+    </>
+  );
+}
 
