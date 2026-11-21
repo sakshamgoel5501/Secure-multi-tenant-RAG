@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ACCESS_COOKIE, accessToken } from "@/lib/access";
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const password = process.env.APP_ACCESS_PASSWORD;
   if (!password) return NextResponse.next(); // gate off (local dev)
 
