@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePersona } from "@/components/persona-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { LoadingDots } from "@/components/loading-dots";
 
 type Need = "admin" | "lifecycle" | "purge";
 type Probe = { caps: { lifecycle: boolean; purge: boolean } | null; error: string | null };
@@ -65,7 +66,7 @@ export function AdminGate({ need = "admin", children }: { need?: Need; children:
 
   return (
     <>
-      {checking && <p className="text-sm text-muted-foreground">Checking access…</p>}
+      {checking && <LoadingDots label="Checking access" />}
       <div hidden={checking}>{children}</div>
     </>
   );

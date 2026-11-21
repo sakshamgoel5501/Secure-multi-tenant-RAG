@@ -1,4 +1,5 @@
-export default function Loading() {
-  return <p className="text-sm text-muted-foreground">Loading…</p>;
-}
+import { LoadingDots } from "@/components/loading-dots";
 
+export default function Loading() {
+  return <LoadingDots />;
+}
