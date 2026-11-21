@@ -1,21 +1,53 @@
-export type Persona = { id: string; tenant: string; group: string; label: string; admin?: boolean };
+export type Persona = {
+  id: string;
+  label: string;
+  tenant?: string;
+  group?: string;
+  admin?: "platform" | "tenant";
+};
 
-export const PERSONAS: Persona[] = [
-  { id: "t1-eng", tenant: "tenant-1", group: "eng", label: "Tenant 1 · Engineering" },
-  { id: "t1-hr", tenant: "tenant-1", group: "hr", label: "Tenant 1 · HR" },
-  { id: "t1-fin", tenant: "tenant-1", group: "fin", label: "Tenant 1 · Finance" },
-  { id: "t2-eng", tenant: "tenant-2", group: "eng", label: "Tenant 2 · Engineering" },
-  { id: "t3-hr", tenant: "tenant-3", group: "hr", label: "Tenant 3 · HR" },
-  { id: "admin", tenant: "tenant-1", group: "eng", label: "Administrator", admin: true },
-];
+export const TENANTS = ["tenant-1", "tenant-2", "tenant-3"];
+export const GROUPS = ["eng", "hr", "fin"];
 
+const GROUP_NAMES: Record<string, string> = { eng: "Engineering", hr: "HR", fin: "Finance" };
+const num = (tenant: string) => tenant.replace("tenant-", "");
+
+export const userPersonaId = (tenant: string, group: string) => `t${num(tenant)}-${group}`;
+
+const USERS: Persona[] = TENANTS.flatMap((tenant) =>
+  GROUPS.map((group) => ({
+    id: userPersonaId(tenant, group),
+    tenant,
+    group,
+    label: `Tenant ${num(tenant)} · ${GROUP_NAMES[group]}`,
+  })),
+);
+
+export const PLATFORM_ADMIN: Persona = {
+  id: "admin-platform",
+  label: "Platform administrator",
+  admin: "platform",
+};
+
+const TENANT_ADMINS: Persona[] = TENANTS.map((tenant) => ({
+  id: `admin-t${num(tenant)}`,
+  tenant,
+  label: `Tenant ${num(tenant)} administrator`,
+  admin: "tenant" as const,
+}));
+
+export const PERSONAS: Persona[] = [...USERS, PLATFORM_ADMIN, ...TENANT_ADMINS];
 export const DEFAULT_PERSONA_ID = "t1-eng";
 
 export function findPersona(id: string | undefined): Persona | undefined {
   return PERSONAS.find((p) => p.id === id);
 }
 
-export const TENANTS = ["tenant-1", "tenant-2", "tenant-3"];
-export const GROUPS = ["eng", "hr", "fin"];
+/** Tenants an administrator may manage. Empty for ordinary users. */
+export function allowedTenants(p: Persona | null): string[] {
+  if (!p?.admin) return [];
+  if (p.admin === "platform") return TENANTS;
+  return p.tenant ? [p.tenant] : [];
+}
 
 

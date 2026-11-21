@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { usePersona } from "@/components/persona-provider";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { refresh } = usePersona();
 
   async function submit() {
     const r = await fetch("/api/login", {
@@ -16,8 +18,9 @@ export default function LoginPage() {
       body: JSON.stringify({ password }),
     });
     if (r.ok) {
+      await refresh();
       router.push("/");
-      router.refresh(); // re-run the middleware with the new cookie
+      router.refresh();
     }
     else setError("Wrong password.");
   }

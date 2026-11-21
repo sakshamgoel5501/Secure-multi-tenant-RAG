@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set PG_PASSWORD in deploy/.env}
+      POSTGRES_DB: rag
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:${QDRANT_TAG:-v1.15.0}
+    restart: unless-stopped
+    volumes: [qdrantdata:/qdrant/storage]
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      qdrant: {condition: service_started}
+    environment:
+      RAG_PG_DSN: postgresql://rag:${PG_PASSWORD}@postgres:5432/rag
+      RAG_REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      RAG_JWT_SECRET: ${RAG_JWT_SECRET:?set RAG_JWT_SECRET}
+      RAG_ADMIN: "1"
+      RAG_ADMIN_KEY: ${RAG_ADMIN_KEY:?set RAG_ADMIN_KEY}
+      GCP_PROJECT: ${GCP_PROJECT:-}
+      GCP_LOCATION: ${GCP_LOCATION:-us-central1}
+    volumes: [modelcache:/app/.model_cache]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      start_period: 180s
+      retries: 6
+
+  frontend:
+    build: ../frontend
+    restart: unless-stopped
+    depends_on:
+      backend: {condition: service_healthy}
+    environment:
+      BACKEND_URL: http://backend:8000
+      RAG_JWT_SECRET: ${RAG_JWT_SECRET}
+      RAG_ADMIN_KEY: ${RAG_ADMIN_KEY}
+      APP_ACCESS_PASSWORD: ${APP_ACCESS_PASSWORD:?set APP_ACCESS_PASSWORD}
+      APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-0}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [frontend]
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
+  modelcache:
+  caddydata:
+
+  

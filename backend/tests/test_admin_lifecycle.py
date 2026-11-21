@@ -6,9 +6,11 @@ from typing import Any
 
 import httpx
 import pytest
+from admin_tokens import admin_headers
 from fastapi import FastAPI
 
 from adapters.fake_embedder import HashEmbedder
+from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
 from adapters.memory_vector_store import InMemoryVectorStore
 from adapters.simple_chunker import ParagraphChunker
@@ -26,7 +28,7 @@ from ingestion.worker import IngestionWorker
 from serving.admin import create_admin_router
 
 KEY = "k" * 32
-H = {"X-Admin-Key": KEY}
+H = admin_headers(KEY)
 T = TenantId("t1")
 CTX = SecurityContext(T, UserId("u"), frozenset({GroupId("g")}), 1)
 
@@ -97,7 +99,7 @@ def build(tmp_path: Path) -> Env:
     app = FastAPI()
     app.include_router(
         create_admin_router(
-            state, Scanner(), acls, Dlq(), admin_key=KEY, data_dir=tmp_path, publisher=bus
+            state, Scanner(), acls, Dlq(), admin_key=KEY, data_dir=tmp_path, publisher=bus, audit=InMemoryAuditLog(),
         )
     )
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
@@ -268,7 +270,7 @@ async def test_lifecycle_routes_need_the_admin_key(
 ) -> None:
     env = build(tmp_path)
     r = await env.client.request(method, url, json=body)
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
     

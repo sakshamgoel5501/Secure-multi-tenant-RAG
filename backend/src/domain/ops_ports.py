@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from domain.models import DocumentEvent, DocumentId, DocumentState, GroupId, TenantId
 
@@ -79,3 +80,22 @@ class EventPurger(Protocol):
 
     async def purge_document_events(self, tenant_id: TenantId, document_id: DocumentId) -> int: ...
     
+
+@dataclass(frozen=True, slots=True)
+class AuditEntry:
+    actor: str
+    role: str
+    tenant: str | None
+    action: str  # "acl.set", "document.purge", "denied:acl.set", ...
+    target: str
+    detail: dict[str, Any] = field(default_factory=dict)  # never document text
+    at: str = ""  # set by the store
+
+
+class AuditLog(Protocol):
+    async def record(self, entry: AuditEntry) -> None: ...
+
+    async def list_entries(self, tenant: str | None, limit: int) -> list[AuditEntry]:
+        """Newest first. tenant=None means every tenant."""
+        ...
+

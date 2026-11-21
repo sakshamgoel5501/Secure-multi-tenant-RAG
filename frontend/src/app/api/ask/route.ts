@@ -15,6 +15,12 @@ export async function POST(req: Request) {
   }
 
   const persona = await currentPersona();
+  if (persona.admin) {
+    return NextResponse.json(
+      { error: "Administrators manage documents and don't read them. Switch to a user identity to ask." },
+      { status: 403 },
+    );
+  }
   const token = await mintToken(persona);
   const init = {
     method: "POST",

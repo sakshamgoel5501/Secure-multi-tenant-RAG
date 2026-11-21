@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const persona = findPersona(body?.personaId);
   const query = typeof body?.query === "string" ? body.query.slice(0, 500) : "";
-  if (!persona || !query) return NextResponse.json({ error: "bad request" }, { status: 400 });
+  if (!persona || persona.admin || !query) return NextResponse.json({ error: "bad request" }, { status: 400 });
   try {
     const r = await backendFetch("/search", {
       method: "POST",

@@ -106,6 +106,21 @@ events in a hostile order (late versions, updates after a delete, a delayed upda
 `frontend/src/app/lifecycle/page.tsx` page shows the authoritative state next to what a search
 returns, so a stale or half-written version can be seen failing to appear.
 
+## Administration: roles, scope and audit
+
+Admin routes (`backend/src/serving/admin.py`) require a signed token with a role
+(`backend/src/serving/admin_auth.py`). A platform admin manages every tenant. A tenant admin is
+limited to one tenant, and the backend checks that on each route. Admin tokens carry a different
+audience from user tokens, so neither works as the other. Admins manage documents and access lists
+but have no route that returns document text.
+
+Every change writes an audit entry before it is made (`backend/src/adapters/postgres_audit.py`),
+and is refused if the entry can't be written. Denied attempts are recorded as well. Entries hold
+titles, groups, versions and sizes, never document text, so a purge doesn't leave content behind.
+
+Limit: in the demo UI, the frontend decides which token an identity receives, behind a shared admin
+password. A production system would take roles from an identity provider.
+
 ## Decisions and trade-offs
 
 | Decision | Alternative | Why |

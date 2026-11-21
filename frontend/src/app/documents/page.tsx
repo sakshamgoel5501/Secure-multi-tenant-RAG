@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GROUPS, TENANTS } from "@/lib/personas";
 import Link from "next/link";
+import { useAdminTenant } from "@/lib/use-admin-tenant";
 
 type Doc = {
   document_id: string;
@@ -15,13 +16,14 @@ type Doc = {
 };
 
 export default function DocumentsPage() {
-  const [tenant, setTenant] = useState(TENANTS[0]);
+  const { tenant, allowed, setTenant } = useAdminTenant();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!tenant) return;
     let cancelled = false;
     fetch(`/api/admin/documents?tenant=${tenant}`)
       .then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => null) }))
@@ -76,22 +78,24 @@ export default function DocumentsPage() {
         </p>
       </header>
 
-      <div className="flex gap-2">
-        {TENANTS.map((t) => (
-          <Button
-            key={t}
-            size="sm"
-            variant={t === tenant ? "default" : "outline"}
-            onClick={() => {
-              setTenant(t);
-              setError(null);
-              setSaved({});
-            }}
-          >
-            {t}
-          </Button>
-        ))}
-      </div>
+      {allowed.length > 1 && (
+        <div className="flex gap-2">
+          {allowed.map((t) => (
+            <Button
+              key={t}
+              size="sm"
+              variant={t === tenant ? "default" : "outline"}
+              onClick={() => {
+                setTenant(t);
+                setError(null);
+                setSaved({});
+              }}
+            >
+              {t}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -119,7 +123,7 @@ export default function DocumentsPage() {
                 </td>
                 <td className="px-4 tabular-nums text-muted-foreground">
                   v{d.active_version ?? "–"}
-                  {d.latest_seen_version !== d.active_version && ` (v${d.latest_seen_version} pending)`}
+                  {d.status === "active" && d.latest_seen_version !== d.active_version && ` (v${d.latest_seen_version} pending)`}
                 </td>
                 <td className="px-4">
                   <div className="flex gap-1.5">

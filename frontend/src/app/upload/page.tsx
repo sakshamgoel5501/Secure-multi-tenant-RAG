@@ -5,10 +5,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { GROUPS, TENANTS } from "@/lib/personas";
+import { GROUPS } from "@/lib/personas";
+import { useAdminTenant } from "@/lib/use-admin-tenant";
 
 export default function UploadPage() {
-  const [tenant, setTenant] = useState(TENANTS[0]);
+  const { tenant, allowed, setTenant } = useAdminTenant();
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [groups, setGroups] = useState<string[]>(["eng"]);
@@ -17,6 +18,7 @@ export default function UploadPage() {
   const [result, setResult] = useState<{ id: string; tenant: string; ready: boolean } | null>(null);
 
   async function submit() {
+    if (!tenant) return;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -62,11 +64,11 @@ export default function UploadPage() {
             <label className="text-sm text-muted-foreground" htmlFor="tenant">Tenant</label>
             <select
               id="tenant"
-              value={tenant}
+              value={tenant ?? ""}
               onChange={(e) => setTenant(e.target.value)}
               className="rounded-md border bg-background px-2 py-1 text-sm"
             >
-              {TENANTS.map((t) => (
+              {allowed.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>

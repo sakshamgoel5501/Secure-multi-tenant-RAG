@@ -12,4 +12,4 @@ backend/data/eval_report.json
 backend/data/golden.json
 node_modules/
 .next/
-
+deploy/.env

@@ -3,8 +3,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+from admin_tokens import admin_headers
 from fastapi import FastAPI
 
+from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocumentId, DocumentState, GroupId, PromotionOutcome, TenantId
 from ingestion.purge import Purger
@@ -14,7 +16,7 @@ T = TenantId("t1")
 OTHER = TenantId("t2")
 D = DocumentId("d1")
 KEY = "k" * 32
-H = {"X-Admin-Key": KEY}
+H = admin_headers(KEY)
 _Key = tuple[TenantId, DocumentId]
 
 
@@ -154,7 +156,7 @@ async def client(e: Env, tmp_path: Path) -> httpx.AsyncClient:
     app = FastAPI()
     app.include_router(
         create_admin_router(
-            e.state, Scanner(), e.acls, Dlq(), admin_key=KEY, data_dir=tmp_path, purger=e.purger
+            e.state, Scanner(), e.acls, Dlq(), admin_key=KEY, data_dir=tmp_path, purger=e.purger, audit=InMemoryAuditLog(),
         )
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
@@ -174,7 +176,7 @@ async def test_admin_routes_report_and_purge(tmp_path: Path) -> None:
 
 async def test_purge_needs_the_key_and_a_known_document(tmp_path: Path) -> None:
     c = await client(await env(), tmp_path)
-    assert (await c.post("/admin/documents/d1/purge", params={"tenant": "t1"})).status_code == 403
+    assert (await c.post("/admin/documents/d1/purge", params={"tenant": "t1"})).status_code == 401
     r = await c.post("/admin/documents/nope/purge", params={"tenant": "t1"}, headers=H)
     assert r.status_code == 404 and r.json()["detail"] == "unknown document"
 

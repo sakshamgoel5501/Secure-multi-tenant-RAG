@@ -1,4 +1,4 @@
 import { adminProxy } from "@/lib/server/admin";
 
-export const GET = () => adminProxy("/admin/capabilities", {}, false);
+export const GET = () => adminProxy("/admin/capabilities", {}, "platform");
 

@@ -4,14 +4,16 @@ from pathlib import Path
 
 import httpx
 import pytest
+from admin_tokens import admin_headers
 from fastapi import FastAPI
 
+from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocStatus, DocumentId, DocumentState, GroupId, TenantId
 from serving.admin import admin_key_from_env, create_admin_router
 
 KEY = "k" * 32
-H = {"X-Admin-Key": KEY}
+H = admin_headers(KEY)
 T = TenantId("t1")
 D = DocumentId("d1")
 
@@ -72,17 +74,17 @@ async def build(
     app = FastAPI()
     app.include_router(
         create_admin_router(
-            state, scanner, acls, bus or Bus(), admin_key=KEY, data_dir=tmp_path
+            state, scanner, acls, bus or Bus(), admin_key=KEY, data_dir=tmp_path, audit=InMemoryAuditLog(),
         )
     )
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     return client, acls
 
 
-@pytest.mark.parametrize("headers", [{}, {"X-Admin-Key": "wrong"}])
-async def test_missing_or_wrong_key_is_403(tmp_path: Path, headers: dict[str, str]) -> None:
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer nope"}])
+async def test_missing_or_wrong_key_is_401(tmp_path: Path, headers: dict[str, str]) -> None:
     client, _ = await build(tmp_path)
-    assert (await client.get("/admin/tenants", headers=headers)).status_code == 403
+    assert (await client.get("/admin/tenants", headers=headers)).status_code == 401
 
 
 async def test_documents_list_state_with_groups(tmp_path: Path) -> None:

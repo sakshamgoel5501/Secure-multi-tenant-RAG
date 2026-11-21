@@ -22,6 +22,7 @@ from adapters.fastembed_embedder import FastEmbedEmbedder
 from adapters.fastembed_reranker import FastEmbedReranker
 from adapters.gemini_llm import GeminiLLM
 from adapters.postgres_acl import PostgresAclStore
+from adapters.postgres_audit import PostgresAuditLog
 from adapters.postgres_doc_state import PostgresDocStateStore
 from adapters.postgres_scanner import PostgresStateScanner
 from adapters.qdrant_inspector import QdrantIndexInspector
@@ -32,6 +33,8 @@ from adapters.simple_chunker import ParagraphChunker
 from domain.ports import LLM, AclReader, DocStateStore, LexicalStore, Reranker, VectorStore
 from ingestion.consumer import IngestionConsumer
 from ingestion.purge import Purger
+from ingestion.reconciler import Reconciler
+from ingestion.scheduler import run_periodically
 from ingestion.worker import IngestionWorker
 from serving.admin import admin_key_from_env, create_admin_router
 from serving.answer_service import AnswerService
@@ -89,15 +92,20 @@ if os.environ.get("GCP_PROJECT"):
 worker = IngestionWorker(state, vectors, ParagraphChunker(max_chars=400), embedder, lexical)
 consumer = IngestionConsumer(bus, worker)
 
-purger = Purger(
-    state,
-    acl,
-    {
-        "dense": QdrantIndexInspector(qdrant, f"rag_dense_{_slug(embedder.model_version)}"),
-        "lexical": QdrantIndexInspector(qdrant, "rag_lexical"),
-    },
-    bus,
-)
+indexes = {
+    "dense": QdrantIndexInspector(qdrant, f"rag_dense_{_slug(embedder.model_version)}"),
+    "lexical": QdrantIndexInspector(qdrant, "rag_lexical"),
+}
+purger = Purger(state, acl, indexes, bus)
+reconciler = Reconciler(scanner, indexes)  # no repair function: it only removes what is unreachable
+audit = PostgresAuditLog(DSN)
+RECONCILE_INTERVAL = _env_float("RAG_RECONCILE_INTERVAL", 600.0)  # seconds; 0 turns it off
+
+
+async def reconcile_job() -> None:
+    report = await reconciler.run()
+    if report.orphans_deleted:
+        print(f"[reconcile] removed {report.orphans_deleted} unreachable chunks")
 
 # --- query path: optionally wrapped in fault injectors --------------------------------------
 faults = Faults()
@@ -133,6 +141,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await state.start()
     await acl.start()
     if ADMIN_KEY is not None:
+        await audit.start()
+    if ADMIN_KEY is not None or RECONCILE_INTERVAL > 0:
         await scanner.start()
     await bus.ensure()
     await vectors.ensure()
@@ -144,14 +154,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] LLM warm-up failed (will retry on first request): {exc!r}")
     stop = asyncio.Event()
-    task = asyncio.create_task(consumer.run_forever(stop))
+    tasks = [asyncio.create_task(consumer.run_forever(stop))]
+    if RECONCILE_INTERVAL > 0:
+        tasks.append(asyncio.create_task(run_periodically(reconcile_job, RECONCILE_INTERVAL, stop)))
     try:
         yield
     finally:
         stop.set()
-        await task
-        if ADMIN_KEY is not None:
+        await asyncio.gather(*tasks)
+        if ADMIN_KEY is not None or RECONCILE_INTERVAL > 0:
             await scanner.close()
+        if ADMIN_KEY is not None:
+            await audit.close()
         await acl.close()
         await state.close()
         await redis.aclose()
@@ -173,6 +187,7 @@ if ADMIN_KEY is not None:
             data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
             publisher=bus,
             purger=purger,
+            audit=audit,
         )
     )
     print("[startup] admin API mounted at /admin (X-Admin-Key required)")
