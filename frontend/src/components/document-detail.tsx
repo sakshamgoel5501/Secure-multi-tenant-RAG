@@ -15,9 +15,22 @@ type Detail = {
   searchable: boolean;
   groups: string[];
 };
+type Footprint = {
+  state: string | null;
+  has_acl: boolean;
+  chunks: Record<string, Record<string, number>>;
+  events: number;
+  content_left: boolean;
+};
+
+function chunkText(v: Record<string, number> | undefined) {
+  const parts = Object.entries(v ?? {}).map(([ver, n]) => `v${ver}: ${n} chunk${n === 1 ? "" : "s"}`);
+  return parts.length ? parts.join(", ") : "none";
+}
 
 export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [footprint, setFootprint] = useState<Footprint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [title, setTitle] = useState(id);
@@ -30,15 +43,20 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const r = await fetch(`/api/admin/documents/${id}?tenant=${tenant}`).catch(() => null);
-      const body = await r?.json().catch(() => null);
+      const [d, f] = await Promise.all([
+        fetch(`/api/admin/documents/${id}?tenant=${tenant}`).catch(() => null),
+        fetch(`/api/admin/documents/${id}/footprint?tenant=${tenant}`).catch(() => null),
+      ]);
+      const detailBody = await d?.json().catch(() => null);
+      const footBody = await f?.json().catch(() => null);
       if (cancelled) return;
-      if (!r || !r.ok) {
-        setError(body?.error ?? "Could not load the document.");
+      if (!d || !d.ok) {
+        setError(detailBody?.error ?? "Could not load the document.");
         return;
       }
       setError(null);
-      setDetail(body);
+      setDetail(detailBody);
+      setFootprint(f?.ok ? footBody : null);
     }
     load();
     const t = setInterval(load, 2000);
@@ -67,12 +85,29 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   }
 
   async function remove() {
-    if (!window.confirm("Delete this document? It disappears from search immediately.")) return;
+    if (!window.confirm("Delete this document? It disappears from search immediately. Stored copies remain until you purge.")) return;
     setBusy(true);
     const r = await fetch(`/api/admin/documents/${id}?tenant=${tenant}`, { method: "DELETE" }).catch(() => null);
     const body = await r?.json().catch(() => null);
     if (!r || !r.ok) setError(body?.error ?? "Delete failed.");
-    else setNote(`Delete recorded as version ${body.version}. Publish a newer version to bring it back.`);
+    else setNote(`Delete recorded as version ${body.version}. Stored copies remain until you purge.`);
+    setBusy(false);
+    refresh();
+  }
+
+  async function purge() {
+    if (!window.confirm("Purge every stored copy of this document (chunks, access list, queue events)? This cannot be undone.")) return;
+    setBusy(true);
+    const r = await fetch(`/api/admin/documents/${id}/purge?tenant=${tenant}`, { method: "POST" }).catch(() => null);
+    const body = await r?.json().catch(() => null);
+    if (!r || !r.ok) setError(body?.error ?? "Purge failed.");
+    else {
+      const c = body.chunks_deleted as Record<string, number>;
+      setNote(
+        `Purged: ${Object.values(c).reduce((a, b) => a + b, 0)} chunks, ${body.events_deleted} queue events` +
+          `${body.acl_removed ? ", the access list" : ""}. A content-free tombstone is kept so old events cannot bring it back.`,
+      );
+    }
     setBusy(false);
     refresh();
   }
@@ -88,7 +123,7 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!id.startsWith("u-") && (
         <p className="rounded-md border p-3 text-xs text-muted-foreground">
-          This document is part of the evaluation corpus. Changing or deleting it will change eval results.
+          This document is part of the evaluation corpus. Changing, deleting or purging it will change eval results.
         </p>
       )}
 
@@ -104,12 +139,42 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
         </Card>
       )}
 
+      {footprint && (
+        <Card>
+          <CardContent className="space-y-3 pt-6 text-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="font-medium">Where this document is stored</h2>
+              <Badge variant={footprint.content_left ? "outline" : "secondary"}>
+                {footprint.content_left ? "content still stored" : "no content left"}
+              </Badge>
+            </div>
+            <dl className="grid grid-cols-[10rem_1fr] gap-y-1.5 text-xs">
+              <dt className="text-muted-foreground">Dense index</dt>
+              <dd>{chunkText(footprint.chunks.dense)}</dd>
+              <dt className="text-muted-foreground">Keyword index</dt>
+              <dd>{chunkText(footprint.chunks.lexical)}</dd>
+              <dt className="text-muted-foreground">Access list</dt>
+              <dd>{footprint.has_acl ? "present" : "removed"}</dd>
+              <dt className="text-muted-foreground">Queue events (with text)</dt>
+              <dd>{footprint.events}</dd>
+              <dt className="text-muted-foreground">State row</dt>
+              <dd>{footprint.state ?? "none"} (ids and version numbers only, no text)</dd>
+            </dl>
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={purge} disabled={busy || !footprint.content_left}>
+                Purge all stored copies
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="space-y-3 pt-6">
           <h2 className="text-sm font-medium">Publish a new version</h2>
           <p className="text-xs text-muted-foreground">
-            Document text is not stored after indexing, so type the full new text. Until the new
-            version is promoted, searches keep returning the current one.
+            The original text is not kept, so type the full new text. Until the new version is
+            promoted, searches keep returning the current one.
           </p>
           <input
             value={title}
@@ -127,4 +192,5 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
     </div>
   );
 }
+
 

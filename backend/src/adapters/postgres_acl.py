@@ -127,4 +127,15 @@ class PostgresAclStore:
             },
         )
     
+    async def delete_acl(self, tenant_id: TenantId, document_id: DocumentId) -> int:
+        """Erase a document's ACL. Bumps the epoch in the same transaction, like any ACL change."""
+        async with self._p().acquire() as conn, conn.transaction():
+            epoch: int = await conn.fetchval(_BUMP)
+            await conn.execute(
+                "DELETE FROM doc_acl WHERE tenant_id = $1 AND document_id = $2",
+                tenant_id,
+                document_id,
+            )
+        return epoch
+    
     

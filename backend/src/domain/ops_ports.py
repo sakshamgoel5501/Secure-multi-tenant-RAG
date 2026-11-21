@@ -54,4 +54,28 @@ class EventPublisher(Protocol):
     async def publish(self, event: DocumentEvent) -> str: ...
 
 
+class AclEraser(Protocol):
+    async def delete_acl(self, tenant_id: TenantId, document_id: DocumentId) -> int:
+        """Remove a document's ACL row. Returns the new policy epoch."""
+        ...
+
+
+class DocumentIndexAudit(Protocol):
+    """Per-document view of one search index."""
+
+    async def document_versions(
+        self, tenant_id: TenantId, document_id: DocumentId
+    ) -> dict[int, int]:
+        """version -> number of chunks currently stored for this document."""
+        ...
+
+    async def delete_versions(
+        self, tenant_id: TenantId, document_id: DocumentId, versions: Collection[int]
+    ) -> int: ...
+
+
+class EventPurger(Protocol):
+    async def count_document_events(self, tenant_id: TenantId, document_id: DocumentId) -> int: ...
+
+    async def purge_document_events(self, tenant_id: TenantId, document_id: DocumentId) -> int: ...
     

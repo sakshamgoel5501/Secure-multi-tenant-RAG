@@ -126,6 +126,40 @@ class RedisEventBus:
         """Tests only."""
         await self._r.delete(self._stream, self._dlq)
 
+    async def _matching(self, stream: str, tenant_id: str, document_id: str) -> list[str]:
+        found: list[str] = []
+        start = "-"
+        while True:
+            rows = await self._r.xrange(stream, min=start, max="+", count=500)
+            for entry_id, fields in rows:
+                try:
+                    data = json.loads(fields.get("data", ""))
+                except ValueError:
+                    continue
+                if (
+                    isinstance(data, dict)
+                    and data.get("tenant_id") == tenant_id
+                    and data.get("document_id") == document_id
+                ):
+                    found.append(str(entry_id))
+            if len(rows) < 500:
+                return found
+            start = f"({rows[-1][0]}"  # exclusive range: needs Redis 6.2+
+
+    async def count_document_events(self, tenant_id: str, document_id: str) -> int:
+        total = 0
+        for stream in (self._stream, self._dlq):
+            total += len(await self._matching(stream, tenant_id, document_id))
+        return total
+
+    async def purge_document_events(self, tenant_id: str, document_id: str) -> int:
+        removed = 0
+        for stream in (self._stream, self._dlq):
+            ids = await self._matching(stream, tenant_id, document_id)
+            if ids:
+                removed += int(await self._r.xdel(stream, *ids))
+        return removed
+
 
 def _flatten(res: Any) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []

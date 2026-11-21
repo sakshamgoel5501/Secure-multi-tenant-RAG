@@ -23,6 +23,7 @@ from domain.models import (
 from domain.ops_ports import AclAdmin, DeadLetterInspector, EventPublisher, StateScanner
 from domain.ports import DocStateStore
 from eval.gate import check_gate
+from ingestion.purge import Footprint, Purger
 
 log = logging.getLogger("rag.admin")
 
@@ -107,6 +108,16 @@ def _describe(state: DocumentState, groups: frozenset[GroupId]) -> dict[str, Any
     }
 
 
+def _footprint_json(f: Footprint) -> dict[str, Any]:
+    return {
+        "state": f.status,
+        "has_acl": f.has_acl,
+        "chunks": {name: {str(v): n for v, n in vs.items()} for name, vs in f.chunks.items()},
+        "events": f.events,
+        "content_left": f.content_left,
+    }
+
+
 def create_admin_router(
     states: DocStateStore,
     scanner: StateScanner,
@@ -116,6 +127,7 @@ def create_admin_router(
     admin_key: str,
     data_dir: Path,
     publisher: EventPublisher | None = None,
+    purger: Purger | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin(admin_key))])
     background: set[asyncio.Task[None]] = set()
@@ -170,6 +182,49 @@ def create_admin_router(
             return {"pending": await dlq.pending_count(), "entries": (await dlq.dlq_entries())[-50:]}
         except Exception as exc:
             raise HTTPException(status_code=503, detail="event bus unavailable") from exc
+        
+    @router.get("/capabilities")
+    async def capabilities() -> dict[str, bool]:
+        return {"lifecycle": publisher is not None, "purge": purger is not None}
+
+    if purger is not None:
+        eraser = purger
+
+        async def known(tenant: str, document_id: str) -> tuple[TenantId, DocumentId]:
+            _check_id(tenant)
+            _check_id(document_id)
+            t, d = TenantId(tenant), DocumentId(document_id)
+            if await states.get(t, d) is None:
+                raise HTTPException(status_code=404, detail="unknown document")
+            return t, d
+
+        @router.get("/documents/{document_id}/footprint")
+        async def footprint(document_id: str, tenant: str) -> dict[str, Any]:
+            t, d = await known(tenant, document_id)
+            try:
+                return _footprint_json(await eraser.footprint(t, d))
+            except Exception as exc:
+                log.warning("footprint failed: %r", exc)
+                raise HTTPException(status_code=503, detail="a backing store is unavailable") from exc
+
+        @router.post("/documents/{document_id}/purge")
+        async def purge_document(document_id: str, tenant: str) -> dict[str, Any]:
+            t, d = await known(tenant, document_id)
+            try:
+                report = await eraser.purge(t, d)
+            except Exception as exc:
+                log.warning("purge failed: %r", exc)
+                raise HTTPException(
+                    status_code=503,
+                    detail="a backing store is unavailable; the purge is safe to retry",
+                ) from exc
+            return {
+                "chunks_deleted": report.chunks_deleted,
+                "events_deleted": report.events_deleted,
+                "acl_removed": report.acl_removed,
+                "epoch": report.epoch,
+                "after": _footprint_json(report.after),
+            }
 
     if publisher is None:
         return router

@@ -63,6 +63,32 @@ class QdrantIndexInspector:
             )
         return n
     
+    async def document_versions(
+        self, tenant_id: TenantId, document_id: DocumentId
+    ) -> dict[int, int]:
+        flt = models.Filter(
+            must=[
+                _tenant_cond(tenant_id),
+                models.FieldCondition(key="document_id", match=models.MatchValue(value=document_id)),
+            ]
+        )
+        counts: dict[int, int] = {}
+        offset: Any = None
+        while True:
+            points, offset = await self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=flt,
+                limit=500,
+                offset=offset,
+                with_payload=["version"],
+                with_vectors=False,
+            )
+            for p in points:
+                version = int((p.payload or {})["version"])
+                counts[version] = counts.get(version, 0) + 1
+            if offset is None:
+                return counts
+    
 
 
     

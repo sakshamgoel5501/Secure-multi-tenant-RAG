@@ -1,4 +1,4 @@
-export type Persona = { id: string; tenant: string; group: string; label: string };
+export type Persona = { id: string; tenant: string; group: string; label: string; admin?: boolean };
 
 export const PERSONAS: Persona[] = [
   { id: "t1-eng", tenant: "tenant-1", group: "eng", label: "Tenant 1 · Engineering" },
@@ -6,6 +6,7 @@ export const PERSONAS: Persona[] = [
   { id: "t1-fin", tenant: "tenant-1", group: "fin", label: "Tenant 1 · Finance" },
   { id: "t2-eng", tenant: "tenant-2", group: "eng", label: "Tenant 2 · Engineering" },
   { id: "t3-hr", tenant: "tenant-3", group: "hr", label: "Tenant 3 · HR" },
+  { id: "admin", tenant: "tenant-1", group: "eng", label: "Administrator", admin: true },
 ];
 
 export const DEFAULT_PERSONA_ID = "t1-eng";

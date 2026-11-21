@@ -36,6 +36,11 @@ export default function IdentityPage() {
               <div className="mt-2 font-mono text-xs text-muted-foreground">
                 tenant={p.tenant} · group={p.group}
               </div>
+              {p.admin && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Can upload, edit, delete and purge documents.
+                </div>
+              )}
             </button>
           );
         })}

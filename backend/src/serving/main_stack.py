@@ -24,12 +24,14 @@ from adapters.gemini_llm import GeminiLLM
 from adapters.postgres_acl import PostgresAclStore
 from adapters.postgres_doc_state import PostgresDocStateStore
 from adapters.postgres_scanner import PostgresStateScanner
-from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
+from adapters.qdrant_inspector import QdrantIndexInspector
+from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore, _slug
 from adapters.redis_bus import RedisEventBus
 from adapters.resilient_llm import ResilientLLM
 from adapters.simple_chunker import ParagraphChunker
 from domain.ports import LLM, AclReader, DocStateStore, LexicalStore, Reranker, VectorStore
 from ingestion.consumer import IngestionConsumer
+from ingestion.purge import Purger
 from ingestion.worker import IngestionWorker
 from serving.admin import admin_key_from_env, create_admin_router
 from serving.answer_service import AnswerService
@@ -86,6 +88,16 @@ if os.environ.get("GCP_PROJECT"):
 # --- ingestion path always uses the real adapters -------------------------------------------
 worker = IngestionWorker(state, vectors, ParagraphChunker(max_chars=400), embedder, lexical)
 consumer = IngestionConsumer(bus, worker)
+
+purger = Purger(
+    state,
+    acl,
+    {
+        "dense": QdrantIndexInspector(qdrant, f"rag_dense_{_slug(embedder.model_version)}"),
+        "lexical": QdrantIndexInspector(qdrant, "rag_lexical"),
+    },
+    bus,
+)
 
 # --- query path: optionally wrapped in fault injectors --------------------------------------
 faults = Faults()
@@ -160,6 +172,7 @@ if ADMIN_KEY is not None:
             admin_key=ADMIN_KEY,
             data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
             publisher=bus,
+            purger=purger,
         )
     )
     print("[startup] admin API mounted at /admin (X-Admin-Key required)")
