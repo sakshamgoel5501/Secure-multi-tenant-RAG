@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { usePersona } from "@/components/persona-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,12 +11,16 @@ import { useAdminTenant } from "@/lib/use-admin-tenant";
 
 export default function UploadPage() {
   const { tenant, allowed, setTenant } = useAdminTenant();
+  const { persona } = usePersona();
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [groups, setGroups] = useState<string[]>(["eng"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ id: string; tenant: string; ready: boolean } | null>(null);
+
+  const own = persona?.admin === "group" ? persona.group : undefined;
+  const effective = own && !groups.includes(own) ? [...groups, own] : groups;
 
   async function submit() {
     if (!tenant) return;
@@ -25,7 +30,7 @@ export default function UploadPage() {
     const r = await fetch("/api/admin/documents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant, title, text, groups }),
+      body: JSON.stringify({ tenant, title, text, groups: effective }),
     }).catch(() => null);
     const body = await r?.json().catch(() => null);
     if (!r || !r.ok) {
@@ -76,9 +81,10 @@ export default function UploadPage() {
             {GROUPS.map((g) => (
               <button
                 key={g}
+                disabled={g === own}
                 onClick={() => setGroups((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]))}
-                className={`rounded-full border px-3 py-1 text-xs ${
-                  groups.includes(g) ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
+                className={`rounded-full border px-3 py-1 text-xs disabled:opacity-60 ${
+                  effective.includes(g) ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"
                 }`}
               >
                 {g}
@@ -93,7 +99,7 @@ export default function UploadPage() {
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
           <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Document text" rows={8} />
-          {groups.length === 0 && (
+          {effective.length === 0 && (
             <p className="text-xs text-muted-foreground">
               With no groups, nobody can read this document. That is a valid, fully locked state.
             </p>
@@ -124,5 +130,4 @@ export default function UploadPage() {
     </div>
   );
 }
-
 

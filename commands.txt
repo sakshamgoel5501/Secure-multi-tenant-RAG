@@ -1,0 +1,4 @@
+Make RAG_ADMIN_KEY at least 32 characters. openssl rand -hex 24 gives 48, which is fine, but a shorter value now stops the backend from starting
+
+
+

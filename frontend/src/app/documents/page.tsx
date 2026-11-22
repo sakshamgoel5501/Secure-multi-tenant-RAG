@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { GROUPS, TENANTS } from "@/lib/personas";
 import Link from "next/link";
 import { useAdminTenant } from "@/lib/use-admin-tenant";
+import { usePersona } from "@/components/persona-provider";
 
 type Doc = {
   document_id: string;
@@ -21,6 +22,7 @@ export default function DocumentsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const { persona } = usePersona();
 
   useEffect(() => {
     if (!tenant) return;
@@ -130,7 +132,8 @@ export default function DocumentsPage() {
                     {GROUPS.map((g) => (
                       <button
                         key={g}
-                        disabled={saving !== null}
+                        disabled={saving !== null || (persona?.admin === "group" && persona.group === g)}
+                        title={persona?.admin === "group" && persona.group === g ? "Group administrators keep their own group" : undefined}
                         onClick={() => toggle(d, g)}
                         className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-60 ${
                           d.groups.includes(g) ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"

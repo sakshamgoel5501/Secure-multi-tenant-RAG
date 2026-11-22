@@ -7,6 +7,7 @@ import {
   samePassword,
   signedAdminValue,
 } from "@/lib/server/auth";
+import { lockedFor, recordFailure, recordSuccess } from "@/lib/server/ratelimit";
 
 const secure = () => process.env.APP_COOKIE_SECURE === "1";
 
@@ -27,9 +28,18 @@ export async function POST(req: Request) {
         { status: 403 },
       );
     }
+    const wait = lockedFor("admin-pw", req);
+    if (wait > 0) {
+      return NextResponse.json(
+        { error: `Too many wrong passwords. Try again in ${Math.ceil(wait / 60)} min.` },
+        { status: 429, headers: { "Retry-After": String(wait) } },
+      );
+    }
     if (!samePassword(String(body?.password ?? ""), expected)) {
+      recordFailure("admin-pw", req);
       return NextResponse.json({ error: "Wrong admin password." }, { status: 401 });
     }
+    recordSuccess("admin-pw", req);
     const res = NextResponse.json(persona);
     res.cookies.set(ADMIN_COOKIE, signedAdminValue(persona.id), {
       httpOnly: true, sameSite: "lax", path: "/", secure: secure(), maxAge: 60 * 60 * 8,

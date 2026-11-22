@@ -43,6 +43,7 @@ services:
       RAG_ADMIN_KEY: ${RAG_ADMIN_KEY:?set RAG_ADMIN_KEY}
       GCP_PROJECT: ${GCP_PROJECT:-}
       GCP_LOCATION: ${GCP_LOCATION:-us-central1}
+      RAG_RECONCILE_INTERVAL: ${RAG_RECONCILE_INTERVAL:-600}
     volumes: [modelcache:/app/.model_cache]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
@@ -61,6 +62,7 @@ services:
       RAG_ADMIN_KEY: ${RAG_ADMIN_KEY}
       APP_ACCESS_PASSWORD: ${APP_ACCESS_PASSWORD:?set APP_ACCESS_PASSWORD}
       APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-0}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:?set APP_ADMIN_PASSWORD}
 
   caddy:
     image: caddy:2

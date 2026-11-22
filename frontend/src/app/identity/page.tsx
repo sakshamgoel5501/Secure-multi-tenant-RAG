@@ -5,11 +5,14 @@ import { useEffect, useState } from "react";
 import { usePersona } from "@/components/persona-provider";
 import { GROUPS, PERSONAS, TENANTS, type Persona } from "@/lib/personas";
 
-const ADMINS = PERSONAS.filter((p) => p.admin);
 const BLURB: Record<string, string> = {
   platform: "All tenants. Manages documents and access, and sees health, evaluation and the audit log.",
   tenant: "Manages this tenant only. Cannot reach other tenants or the platform pages.",
+  group: "Manages documents this group can read. Cannot purge, and cannot remove its own group.",
 };
+
+const adminsFor = (tenant: string, kind: "tenant" | "group") =>
+  PERSONAS.filter((p) => p.admin === kind && p.tenant === tenant);
 
 export default function IdentityPage() {
   const { persona, select } = usePersona();
@@ -57,6 +60,8 @@ export default function IdentityPage() {
     );
   };
 
+  const note = (text: string) => <div className="mt-1 text-xs text-muted-foreground">{text}</div>;
+
   return (
     <div className="space-y-8">
       <header>
@@ -75,10 +80,7 @@ export default function IdentityPage() {
             <div className="text-xs text-muted-foreground">{tenant}</div>
             <div className="grid gap-2 sm:grid-cols-3">
               {PERSONAS.filter((p) => !p.admin && p.tenant === tenant).map((p) =>
-                card(
-                  p,
-                  <div className="mt-1 font-mono text-xs text-muted-foreground">group={p.group}</div>,
-                ),
+                card(p, <div className="mt-1 font-mono text-xs text-muted-foreground">group={p.group}</div>),
               )}
             </div>
           </div>
@@ -86,7 +88,7 @@ export default function IdentityPage() {
         <p className="text-xs text-muted-foreground">Groups: {GROUPS.join(", ")}.</p>
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-4">
         <h2 className="text-sm font-medium">Administrators</h2>
         {adminOn ? (
           <>
@@ -101,10 +103,19 @@ export default function IdentityPage() {
               <span className="text-xs text-muted-foreground">Needed once per admin identity you pick.</span>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {ADMINS.map((p) =>
-                card(p, <div className="mt-1 text-xs text-muted-foreground">{BLURB[p.admin as string]}</div>),
-              )}
+              {PERSONAS.filter((p) => p.admin === "platform").map((p) => card(p, note(BLURB.platform)))}
             </div>
+            {TENANTS.map((tenant) => (
+              <div key={tenant} className="space-y-2">
+                <div className="text-xs text-muted-foreground">{tenant}</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {adminsFor(tenant, "tenant").map((p) => card(p, note(BLURB.tenant)))}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {adminsFor(tenant, "group").map((p) => card(p, note(BLURB.group)))}
+                </div>
+              </div>
+            ))}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">

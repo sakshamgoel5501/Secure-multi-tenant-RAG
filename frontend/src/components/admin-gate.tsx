@@ -12,10 +12,12 @@ type Probe = { caps: { lifecycle: boolean; purge: boolean } | null; error: strin
 export function AdminGate({
   need = "admin",
   tenant,
+  level = "group",
   children,
 }: {
   need?: Need;
   tenant?: string;
+  level?: "group" | "tenant";
   children: React.ReactNode;
 }) {
   const { persona } = usePersona();
@@ -53,7 +55,9 @@ export function AdminGate({
           Choose an identity
         </Link>
       );
-    } else if (tenant && persona.admin === "tenant" && persona.tenant !== tenant) {
+    } else if (level === "tenant" && persona.admin === "group") {
+      problem = "This page needs a tenant or platform administrator.";
+    } else if (tenant && persona.admin !== "platform" && persona.tenant !== tenant) {
       problem = `This demo runs on ${tenant}. Use the platform administrator or the ${tenant} administrator.`;
     } else if (probe.error) {
       problem = probe.error;

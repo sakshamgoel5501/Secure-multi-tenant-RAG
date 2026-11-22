@@ -3,7 +3,7 @@ export type Persona = {
   label: string;
   tenant?: string;
   group?: string;
-  admin?: "platform" | "tenant";
+  admin?: "platform" | "tenant" | "group";
 };
 
 export const TENANTS = ["tenant-1", "tenant-2", "tenant-3"];
@@ -36,7 +36,17 @@ const TENANT_ADMINS: Persona[] = TENANTS.map((tenant) => ({
   admin: "tenant" as const,
 }));
 
-export const PERSONAS: Persona[] = [...USERS, PLATFORM_ADMIN, ...TENANT_ADMINS];
+const GROUP_ADMINS: Persona[] = TENANTS.flatMap((tenant) =>
+  GROUPS.map((group) => ({
+    id: `admin-${userPersonaId(tenant, group)}`,
+    tenant,
+    group,
+    label: `Tenant ${num(tenant)} · ${GROUP_NAMES[group]} administrator`,
+    admin: "group" as const,
+  })),
+);
+
+export const PERSONAS: Persona[] = [...USERS, PLATFORM_ADMIN, ...TENANT_ADMINS, ...GROUP_ADMINS];
 export const DEFAULT_PERSONA_ID = "t1-eng";
 
 export function findPersona(id: string | undefined): Persona | undefined {
@@ -49,5 +59,4 @@ export function allowedTenants(p: Persona | null): string[] {
   if (p.admin === "platform") return TENANTS;
   return p.tenant ? [p.tenant] : [];
 }
-
 

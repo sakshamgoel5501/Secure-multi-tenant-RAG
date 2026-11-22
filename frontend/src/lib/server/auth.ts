@@ -55,18 +55,24 @@ export async function mintToken(p: Persona): Promise<string> {
 }
 
 /** Short-lived admin token carrying the role. The backend enforces what the role may do. */
-export async function mintAdminToken(p: Persona): Promise<string> {
+export async function mintAdminToken(p: Persona, sub?: string): Promise<string> {
   if (!p.admin) throw new Error("not an administrator");
   const secret = new TextEncoder().encode(env("RAG_ADMIN_KEY"));
   const claims: Record<string, string> =
-    p.admin === "platform" ? { role: "platform_admin" } : { role: "tenant_admin", tenant: p.tenant ?? "" };
+    p.admin === "platform"
+      ? { role: "platform_admin" }
+      : p.admin === "tenant"
+        ? { role: "tenant_admin", tenant: p.tenant ?? "" }
+        : { role: "group_admin", tenant: p.tenant ?? "", group: p.group ?? "" };
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
-    .setSubject(`demo-${p.id}`)
+    .setSubject(sub ?? `demo-${p.id}`)
     .setAudience("rag-admin")
     .setIssuedAt()
     .setExpirationTime("5m")
     .sign(secret);
 }
+
+
 
 

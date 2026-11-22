@@ -39,7 +39,10 @@ export async function adminProxy(path: string, init: Init = {}, mode: "persona" 
   try {
     r = await backendFetch(path, {
       ...init,
-      headers: { ...init.headers, Authorization: `Bearer ${await mintAdminToken(actor)}` },
+      headers: {
+        ...init.headers,
+        Authorization: `Bearer ${await mintAdminToken(actor, mode === "platform" ? "ui-public" : undefined)}`,
+      },
     });
   } catch {
     return NextResponse.json(

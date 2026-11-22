@@ -10,15 +10,21 @@ ADMIN_AUDIENCE = "rag-admin"  # user tokens use "rag", so neither works as the o
 @dataclass(frozen=True, slots=True)
 class Principal:
     actor: str
-    role: str  # "platform_admin" or "tenant_admin"
+    role: str  # "platform_admin", "tenant_admin" or "group_admin"
     tenant: str | None
+    group: str | None = None
 
     @property
     def platform(self) -> bool:
         return self.role == "platform_admin"
 
+    @property
+    def group_scoped(self) -> bool:
+        return self.role == "group_admin"
+
     def can_manage(self, tenant: str) -> bool:
-        return self.platform or (self.role == "tenant_admin" and self.tenant == tenant)
+        """Tenant-level reach. Group admins are further limited per document by the routes."""
+        return self.platform or (self.role in ("tenant_admin", "group_admin") and self.tenant == tenant)
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -40,13 +46,15 @@ def admin_identity(secret: str) -> Callable[[Request], Principal]:
             )
         except jwt.InvalidTokenError:
             raise _unauthorized("invalid or expired admin token") from None
-        role, tenant = claims.get("role"), claims.get("tenant")
+        actor = str(claims["sub"])
+        role, tenant, group = claims.get("role"), claims.get("tenant"), claims.get("group")
         if role == "platform_admin":
-            return Principal(str(claims["sub"]), role, None)
+            return Principal(actor, role, None)
         if role == "tenant_admin" and isinstance(tenant, str) and tenant:
-            return Principal(str(claims["sub"]), role, tenant)
+            return Principal(actor, role, tenant)
+        if role == "group_admin" and isinstance(tenant, str) and tenant and isinstance(group, str) and group:
+            return Principal(actor, role, tenant, group)
         raise _unauthorized("unknown or incomplete admin role")
 
     return identity
-
 

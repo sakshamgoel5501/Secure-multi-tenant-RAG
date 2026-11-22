@@ -22,7 +22,7 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     }
-    else setError("Wrong password.");
+    else { const b = await r.json().catch(() => null); setError(b?.error ?? "Wrong password."); }
   }
 
   return (

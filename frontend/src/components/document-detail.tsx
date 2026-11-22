@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { usePersona } from "@/components/persona-provider";
 
 type Detail = {
   status: string;
@@ -36,6 +37,7 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   const [title, setTitle] = useState(id);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const { persona } = usePersona();
 
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
@@ -161,7 +163,12 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
               <dd>{footprint.state ?? "none"} (ids and version numbers only, no text)</dd>
             </dl>
             <div className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={purge} disabled={busy || !footprint.content_left}>
+              <Button 
+                variant="outline" 
+                size="sm" onClick={purge} 
+                disabled={busy || !footprint.content_left || persona?.admin === "group"}
+                title="Only tenant or platform administrators can purge"
+              >
                 Purge all stored copies
               </Button>
             </div>

@@ -2,6 +2,7 @@ services:
   backend:
     environment:
       RAG_JWT_SECRET: ""
+      RAG_RECONCILE_INTERVAL: "0"
     ports: ["8000:8000"]
 
     
