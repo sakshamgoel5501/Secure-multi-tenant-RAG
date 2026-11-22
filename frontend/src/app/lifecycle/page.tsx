@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePersona } from "@/components/persona-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,14 @@ const SCENARIOS = [
   ["late_update_after_delete", "Late update after delete", "A delete at N+2 arrives, then an update from before it. The document must stay deleted. The late chunks are written but never served (orphans)."],
 ] as const;
 
+const GROUP_LABEL: Record<string, string> = { eng: "Engineering", hr: "HR", fin: "Finance" };
+
 export default function LifecyclePage() {
+  const { persona } = usePersona();
+  const groupAdmin = persona?.admin === "group";
+  const group = groupAdmin && persona?.group ? persona.group : "eng";
+  const checkAs = `t1-${group}`;
+
   const [docId, setDocId] = useState<string | null>(null);
   const [state, setState] = useState<State | null>(null);
   const [served, setServed] = useState<Served>(null);
@@ -42,7 +50,7 @@ export default function LifecyclePage() {
       const c = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personaId: "t1-eng", query: QUERY }),
+        body: JSON.stringify({ personaId: checkAs, query: QUERY }),
       })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
@@ -59,7 +67,7 @@ export default function LifecyclePage() {
       stop = true;
       clearInterval(t);
     };
-  }, [docId]);
+  }, [docId, checkAs]);
 
   const add = (line: string) => setLog((l) => [line, ...l].slice(0, 8));
   const next = (state?.latest_seen_version ?? 0) + 1;
@@ -76,7 +84,7 @@ export default function LifecyclePage() {
   async function create() {
     const body = await call("Created a demo document (version 1).", "/api/admin/documents", {
       method: "POST",
-      body: JSON.stringify({ tenant: TENANT, title: "Lifecycle demo", text: text(0), groups: ["eng"] }),
+      body: JSON.stringify({ tenant: TENANT, title: "Lifecycle demo", text: text(0), groups: [group] }),
     });
     if (body) {
       setState(null);
@@ -113,8 +121,14 @@ export default function LifecyclePage() {
           Documents change, get deleted, and their events arrive late or twice. This page makes the
           guarantees visible on a throwaway document, so the evaluation corpus stays untouched. The
           left card is the authoritative state in Postgres. The right card is what a search actually
-          returns to an Engineering user.
+          returns to a {GROUP_LABEL[group] ?? group} user.
         </p>
+        {groupAdmin && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            As a group administrator your demo document is readable by {group} only, and the
+            event-ordering simulations are left to tenant and platform administrators.
+          </p>
+        )}
       </header>
 
       {!docId ? (
@@ -162,16 +176,18 @@ export default function LifecyclePage() {
                 <Button size="sm" variant="outline" onClick={remove} disabled={busy}>Delete</Button>
                 <Button size="sm" variant="ghost" onClick={create} disabled={busy}>New demo document</Button>
               </div>
-              <div className="space-y-3">
-                {SCENARIOS.map(([id, label, blurb]) => (
-                  <div key={id} className="flex items-start justify-between gap-4 rounded-lg border p-3">
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      <span className="font-medium text-foreground">{label}.</span> {blurb}
-                    </p>
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => simulate(id, label)}>Run</Button>
-                  </div>
-                ))}
-              </div>
+              {!groupAdmin && (
+                <div className="space-y-3">
+                  {SCENARIOS.map(([id, label, blurb]) => (
+                    <div key={id} className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        <span className="font-medium text-foreground">{label}.</span> {blurb}
+                      </p>
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => simulate(id, label)}>Run</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 After a delete, &ldquo;Publish update&rdquo; brings the document back, because a newer
                 version beats the tombstone.
@@ -191,5 +207,4 @@ export default function LifecyclePage() {
     </div>
   );
 }
-
 

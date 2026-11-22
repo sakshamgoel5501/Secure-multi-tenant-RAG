@@ -187,4 +187,17 @@ async def test_the_dead_letter_view_never_returns_document_text(tmp_path: Path) 
     assert r.json()["entries"][0]["error"] == "boom"
 
 
+async def test_group_admin_can_version_and_delete_documents_their_group_can_read(tmp_path: Path) -> None:
+    c, _, _, pub, _ = await build(tmp_path)
+    body = {"tenant_id": "t1", "title": "t", "text": "new text"}
+    v = await c.post("/admin/documents/d-eng/versions", json=body, headers=ENG)
+    assert v.status_code == 202 and v.json()["version"] == 2
+    d = await c.delete("/admin/documents/d-eng", params={"tenant": "t1"}, headers=ENG)
+    assert d.status_code == 202 and d.json()["version"] == 3
+    assert len(pub.events) == 2
+    hidden = await c.post("/admin/documents/d-hr/versions", json=body, headers=ENG)
+    assert hidden.status_code == 403 and len(pub.events) == 2
+
+    
+
     

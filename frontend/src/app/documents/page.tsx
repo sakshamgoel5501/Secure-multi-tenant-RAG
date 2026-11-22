@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GROUPS, TENANTS } from "@/lib/personas";
+import { GROUPS } from "@/lib/personas";
 import Link from "next/link";
 import { useAdminTenant } from "@/lib/use-admin-tenant";
 import { usePersona } from "@/components/persona-provider";
@@ -98,6 +98,11 @@ export default function DocumentsPage() {
           ))}
         </div>
       )}
+
+      <p className="text-xs text-muted-foreground">
+        {docs.length} document{docs.length === 1 ? "" : "s"}
+        {persona?.admin === "group" ? ` that ${persona.group} can read` : ""}
+      </p>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

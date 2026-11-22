@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { queryForDoc } from "@/lib/corpus";
 import { GROUPS } from "@/lib/personas";
+import { usePersona } from "@/components/persona-provider";
 
 const TENANT = "tenant-1";
 const PERSONA_FOR: Record<string, string> = { eng: "t1-eng", hr: "t1-hr", fin: "t1-fin" };
@@ -21,6 +22,8 @@ export default function SecurityPage() {
   const [epoch, setEpoch] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { persona } = usePersona();
+  const ownGroup = persona?.admin === "group" ? persona.group : undefined;
 
   const checkAll = useCallback(async (id: string) => {
     const results = await Promise.all(
@@ -93,6 +96,14 @@ export default function SecurityPage() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
+      {docs.length === 0 && !error && (
+        <p className="text-sm text-muted-foreground">
+          {ownGroup
+            ? `No documents that ${ownGroup} can read. Upload one first.`
+            : "No documents yet."}
+        </p>
+      )}
+
       <Card>
         <CardContent className="space-y-5 pt-6">
           <div className="flex items-center gap-3">
@@ -126,7 +137,13 @@ export default function SecurityPage() {
                     {sees[g] === undefined ? "…" : sees[g] ? "can find it" : "cannot find it"}
                   </span>
                   {groups.includes(g) ? (
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => apply(groups.filter((x) => x !== g))}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy || g === ownGroup}
+                      title={g === ownGroup ? "Group administrators keep their own group" : undefined}
+                      onClick={() => apply(groups.filter((x) => x !== g))}
+                    >
                       Revoke
                     </Button>
                   ) : (
