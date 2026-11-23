@@ -18,6 +18,8 @@ PASSTHROUGH = {
     "reconcile": "ingestion.reconcile_main",
     "token": "serving.mint_token",
     "mcp": "mcp_server.server",
+    "seed-users": "ingestion.seed_users",
+    "migrate-tenant": "ingestion.migrate_tenant",
 }
 
 

@@ -1,20 +1,21 @@
-"""
-Run it with the server stopped, because embedded Qdrant allows only one process per folder.
-"""
-
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+from pathlib import Path
 
 from qdrant_client import AsyncQdrantClient
 
 from adapters.fastembed_embedder import FastEmbedEmbedder
+from adapters.local_blobs import LocalBlobStore
 from adapters.postgres_scanner import PostgresStateScanner
-from adapters.qdrant_inspector import QdrantIndexInspector
-from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore, _slug
+from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
+from adapters.routed_inspector import RoutedInspector
 from adapters.simple_chunker import ParagraphChunker
+from adapters.tenant_layout import TenantLayout
+from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
 from domain.models import DocumentEvent, DocumentId, Operation, TenantId
 from ingestion.corpus import generate_corpus
 from ingestion.reconciler import Reconciler
@@ -28,23 +29,38 @@ async def run(tenants: int, docs: int, seed: int) -> None:
         if os.environ.get("QDRANT_URL")
         else AsyncQdrantClient(path="./qdrant_data")
     )
+    silo = frozenset(t.strip() for t in os.environ.get("RAG_SILO_TENANTS", "").split(",") if t.strip())
     embedder = FastEmbedEmbedder()
-    vectors = QdrantVectorStore(qdrant, embedder.model_version, embedder.dim)
-    lexical = QdrantLexicalStore(qdrant)
+    layout = TenantLayout(embedder.model_version, silo)
+    shared_lexical = QdrantLexicalStore(qdrant)
+    vectors = RoutedVectorStore(
+        QdrantVectorStore(qdrant, embedder.model_version, embedder.dim), silo,
+        lambda t: QdrantVectorStore(qdrant, embedder.model_version, embedder.dim, prefix=layout.prefix(t)),
+    )  # fmt: skip
+    lexical = RoutedLexicalStore(
+        shared_lexical, silo,
+        lambda t: QdrantLexicalStore(qdrant, prefix=layout.prefix(t), model=shared_lexical.model),
+    )  # fmt: skip
     await vectors.ensure()  # recreates empty collections if the folder was wiped
     await lexical.ensure()
 
     scanner = PostgresStateScanner(dsn)
     await scanner.start()
+    blobs = LocalBlobStore(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")))
 
-    # Stand-in for the real source of truth (object storage / the upstream system).
+    # Stand-in for the upstream system, used for the synthetic corpus only.
     corpus, _ = generate_corpus(tenants, docs, seed)
     source = {(d.tenant_id, d.document_id): d for d in corpus}
     reindexer = Reindexer(vectors, ParagraphChunker(max_chars=400), embedder, lexical)
 
     async def repair(tenant: TenantId, doc: DocumentId, version: int) -> bool:
+        text, meta = await blobs.get(tenant, doc, version, "text"), await blobs.get(tenant, doc, version, "meta")
+        if text is not None and meta is not None:  # uploaded documents are rebuilt from the stored text
+            title = str(json.loads(meta).get("title", doc))
+            await reindexer.reindex(DocumentEvent(Operation.UPSERT, tenant, doc, version, title, text.decode()))
+            return True
         d = source.get((tenant, doc))
-        if d is None or version != 1:  # the demo loader only ever creates version 1
+        if d is None or version != 1:
             return False
         await reindexer.reindex(DocumentEvent(Operation.UPSERT, tenant, doc, version, d.title, d.text))
         return True
@@ -52,8 +68,8 @@ async def run(tenants: int, docs: int, seed: int) -> None:
     reconciler = Reconciler(
         scanner,
         {
-            "dense": QdrantIndexInspector(qdrant, f"rag_dense_{_slug(embedder.model_version)}"),
-            "lexical": QdrantIndexInspector(qdrant, "rag_lexical"),
+            "dense": RoutedInspector(qdrant, layout.dense_collection),
+            "lexical": RoutedInspector(qdrant, layout.lexical_collection),
         },
         repair,
     )
@@ -78,7 +94,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
 
     

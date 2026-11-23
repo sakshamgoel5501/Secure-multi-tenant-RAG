@@ -13,3 +13,5 @@ export function queryForDoc(documentId: string): string {
 }
 
 
+export const isCorpusDoc = (id: string) => /^t\d+-doc-\d+$/.test(id);
+

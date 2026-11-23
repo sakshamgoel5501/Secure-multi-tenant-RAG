@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+
 from google import genai
 from google.genai import types
 
@@ -30,18 +32,26 @@ class GeminiLLM:
             else None
         )
 
+    def _config(self, system: str) -> types.GenerateContentConfig:
+        return types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0.0,
+            max_output_tokens=self._max_tokens,
+            thinking_config=self._thinking,
+        )
+
     async def generate(self, system: str, user: str) -> str:
         resp = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=user,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                temperature=0.0,
-                max_output_tokens=self._max_tokens,
-                thinking_config=self._thinking,
-            ),
+            model=self._model, contents=user, config=self._config(system)
         )
         return resp.text or ""
-    
 
-    
+    async def stream(self, system: str, user: str) -> AsyncIterator[str]:
+        pieces = await self._client.aio.models.generate_content_stream(
+            model=self._model, contents=user, config=self._config(system)
+        )
+        async for chunk in pieces:
+            if chunk.text:
+                yield chunk.text
+
+                

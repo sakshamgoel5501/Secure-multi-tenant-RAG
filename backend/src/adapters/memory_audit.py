@@ -16,8 +16,15 @@ class InMemoryAuditLog:
             raise ConnectionError("audit store down")
         self.entries.append(replace(entry, at=datetime.now(UTC).isoformat()))
 
-    async def list_entries(self, tenant: str | None, limit: int) -> list[AuditEntry]:
-        rows = [e for e in reversed(self.entries) if tenant is None or e.tenant == tenant]
+    async def list_entries(
+        self, tenant: str | None, limit: int, *, prefixes: tuple[str, ...] | None = None
+    ) -> list[AuditEntry]:
+        rows = [
+            e
+            for e in reversed(self.entries)
+            if (tenant is None or e.tenant == tenant)
+            and (prefixes is None or e.action.startswith(prefixes))
+        ]
         return rows[:limit]
     
 

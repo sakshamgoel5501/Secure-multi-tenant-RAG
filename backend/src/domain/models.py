@@ -151,9 +151,13 @@ class Answer:
     grounded: bool  # True only if the text carries at least one validated citation
     degraded: tuple[str, ...]  # stages that failed or timed out, for observability
     invalid_citations: int = 0
+    plan: tuple[str, ...] = ()  # the sub-questions a multi-part question was split into
+    
 
-
-
+@dataclass(frozen=True, slots=True)
+class ParsedFile:
+    text: str
+    kind: str  # "pdf", "docx" or "text"
 
     
 

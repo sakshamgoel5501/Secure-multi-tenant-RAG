@@ -17,6 +17,9 @@ from adapters.chaos import (
     ChaosVectorStore,
     Faults,
 )
+from adapters.llm_decomposer import LLMDecomposer
+from serving.planner import PlannedRetriever
+from serving.query_service import QueryService, Retriever
 from adapters.fake_llm import ExtractiveLLM
 from adapters.fastembed_embedder import FastEmbedEmbedder
 from adapters.fastembed_reranker import FastEmbedReranker
@@ -25,8 +28,7 @@ from adapters.postgres_acl import PostgresAclStore
 from adapters.postgres_audit import PostgresAuditLog
 from adapters.postgres_doc_state import PostgresDocStateStore
 from adapters.postgres_scanner import PostgresStateScanner
-from adapters.qdrant_inspector import QdrantIndexInspector
-from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore, _slug
+from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
 from adapters.redis_bus import RedisEventBus
 from adapters.resilient_llm import ResilientLLM
 from adapters.simple_chunker import ParagraphChunker
@@ -41,7 +43,16 @@ from serving.answer_service import AnswerService
 from serving.api import create_app
 from serving.auth import jwt_identity
 from serving.chaos_api import mount_chaos
-from serving.query_service import QueryService
+from adapters.postgres_accounts import PostgresAccountStore
+from serving.admin_users import create_users_router
+from serving.auth_api import create_auth_router
+from serving.auth_service import AuthService
+from serving.bootstrap import ensure_bootstrap_admin
+from adapters.routed_inspector import RoutedInspector
+from adapters.tenant_layout import TenantLayout
+from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
+from adapters.file_parsers import DefaultFileParser
+from adapters.local_blobs import LocalBlobStore
 
 DSN = os.environ.get("RAG_PG_DSN", "postgresql://localhost/rag")
 REDIS_URL = os.environ.get("RAG_REDIS_URL", "redis://localhost:6379/0")
@@ -65,8 +76,20 @@ qdrant = (
     else AsyncQdrantClient(path="./qdrant_data")  # embedded: one process only, no --reload
 )
 embedder = FastEmbedEmbedder()
-vectors = QdrantVectorStore(qdrant, embedder.model_version, embedder.dim)
-lexical = QdrantLexicalStore(qdrant)
+SILO_TENANTS = frozenset(t.strip() for t in os.environ.get("RAG_SILO_TENANTS", "").split(",") if t.strip())
+layout = TenantLayout(embedder.model_version, SILO_TENANTS)
+shared_lexical = QdrantLexicalStore(qdrant)
+vectors = RoutedVectorStore(
+    QdrantVectorStore(qdrant, embedder.model_version, embedder.dim),
+    SILO_TENANTS,
+    lambda t: QdrantVectorStore(qdrant, embedder.model_version, embedder.dim, prefix=layout.prefix(t)),
+)
+lexical = RoutedLexicalStore(
+    shared_lexical,
+    SILO_TENANTS,
+    lambda t: QdrantLexicalStore(qdrant, prefix=layout.prefix(t), model=shared_lexical.model),
+)
+print(f"[startup] dedicated collections for: {', '.join(sorted(SILO_TENANTS)) or 'no tenants (shared pool)'}")
 reranker = FastEmbedReranker()
 
 raw_llm: LLM
@@ -93,10 +116,11 @@ worker = IngestionWorker(state, vectors, ParagraphChunker(max_chars=400), embedd
 consumer = IngestionConsumer(bus, worker)
 
 indexes = {
-    "dense": QdrantIndexInspector(qdrant, f"rag_dense_{_slug(embedder.model_version)}"),
-    "lexical": QdrantIndexInspector(qdrant, "rag_lexical"),
+    "dense": RoutedInspector(qdrant, layout.dense_collection),
+    "lexical": RoutedInspector(qdrant, layout.lexical_collection),
 }
-purger = Purger(state, acl, indexes, bus)
+blobs = LocalBlobStore(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")))
+purger = Purger(state, acl, indexes, bus, blobs=blobs)
 reconciler = Reconciler(scanner, indexes)  # no repair function: it only removes what is unreachable
 audit = PostgresAuditLog(DSN)
 RECONCILE_INTERVAL = _env_float("RAG_RECONCILE_INTERVAL", 600.0)  # seconds; 0 turns it off
@@ -127,21 +151,38 @@ query_service = QueryService(
     retrieval_timeout=_env_float("RAG_RETRIEVAL_TIMEOUT", 2.0),
     rerank_timeout=_env_float("RAG_RERANK_TIMEOUT", 2.0),
 )
+retriever: Retriever = (
+    query_service
+    if os.environ.get("RAG_PLANNER", "1") == "0"
+    else PlannedRetriever(
+        query_service, LLMDecomposer(llm), timeout=_env_float("RAG_DECOMPOSE_TIMEOUT", 2.0)
+    )
+)
 answer_service = AnswerService(
-    query_service, llm, generation_timeout=_env_float("RAG_GENERATION_TIMEOUT", 10.0)
+    retriever, llm, generation_timeout=_env_float("RAG_GENERATION_TIMEOUT", 10.0)
 )
 
 _secret = os.environ.get("RAG_JWT_SECRET")
-identity = jwt_identity(_secret, acl) if _secret else None
-print(f"[startup] identity: {'JWT, epoch from ACL store' if _secret else 'DEV HEADERS (insecure)'}")
+accounts = PostgresAccountStore(DSN)
+auth_service = AuthService(accounts, audit, _secret, ADMIN_KEY) if _secret else None
+identity = jwt_identity(_secret, acl, accounts=accounts) if _secret else None
+NEEDS_ACCOUNTS = _secret is not None or ADMIN_KEY is not None
+print(f"[startup] identity: {'accounts (username and password)' if _secret else 'DEV HEADERS (insecure)'}")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await state.start()
     await acl.start()
-    if ADMIN_KEY is not None:
+    if NEEDS_ACCOUNTS:
+        await accounts.start()
         await audit.start()
+        if _secret:
+            await ensure_bootstrap_admin(
+                accounts,
+                os.environ.get("RAG_BOOTSTRAP_ADMIN_USER"),
+                os.environ.get("RAG_BOOTSTRAP_ADMIN_PASSWORD"),
+            )
     if ADMIN_KEY is not None or RECONCILE_INTERVAL > 0:
         await scanner.start()
     await bus.ensure()
@@ -164,7 +205,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await asyncio.gather(*tasks)
         if ADMIN_KEY is not None or RECONCILE_INTERVAL > 0:
             await scanner.close()
-        if ADMIN_KEY is not None:
+        if NEEDS_ACCOUNTS:
+            await accounts.close()
             await audit.close()
         await acl.close()
         await state.close()
@@ -176,6 +218,8 @@ app = create_app(query_service, lifespan=lifespan, answers=answer_service, ident
 if CHAOS:
     mount_chaos(app, faults)
     print("[startup] WARNING: chaos endpoint mounted at /chaos (never enable in production)")
+if auth_service is not None:
+    app.include_router(create_auth_router(auth_service))
 if ADMIN_KEY is not None:
     app.include_router(
         create_admin_router(
@@ -185,12 +229,18 @@ if ADMIN_KEY is not None:
             bus,
             admin_key=ADMIN_KEY,
             data_dir=Path(os.environ.get("RAG_DATA_DIR", "data")),
+            audit=audit,
             publisher=bus,
             purger=purger,
-            audit=audit,
+            accounts=accounts,
+            searcher=query_service.retrieve,
+            epochs=acl,
+            blobs=blobs, 
+            parser=DefaultFileParser(),
         )
     )
-    print("[startup] admin API mounted at /admin (X-Admin-Key required)")
+    app.include_router(create_users_router(accounts, audit, admin_key=ADMIN_KEY))
+    print("[startup] admin API mounted at /admin (signed administrator accounts only)")
 
 
     

@@ -13,6 +13,7 @@ from serving.admin import create_admin_router
 
 KEY = "k" * 32
 T1, T2 = TenantId("t1"), TenantId("t2")
+T1ADMIN = admin_headers(KEY, "tenant_admin", "t1")
 D_ENG, D_HR, D_BOTH = DocumentId("d-eng"), DocumentId("d-hr"), DocumentId("d-both")
 ENG = admin_headers(KEY, "group_admin", "t1", "eng")
 PLATFORM = admin_headers(KEY)
@@ -169,15 +170,15 @@ async def test_group_admin_cannot_purge_simulate_or_read_the_audit_log(tmp_path:
 async def test_reads_are_audited_once_per_window(tmp_path: Path) -> None:
     c, _, audit, *_ = await build(tmp_path)
     for _ in range(3):
-        await c.get("/admin/documents", params={"tenant": "t1"}, headers=PLATFORM)
+        await c.get("/admin/documents", params={"tenant": "t1"}, headers=T1ADMIN)
     reads = [e for e in audit.entries if e.action == "read:documents.list"]
-    assert len(reads) == 1 and reads[0].role == "platform_admin"
+    assert len(reads) == 1 and reads[0].role == "tenant_admin"
 
 
 async def test_a_failing_audit_store_does_not_block_reads(tmp_path: Path) -> None:
     c, _, audit, *_ = await build(tmp_path)
     audit.fail = True
-    assert (await c.get("/admin/documents", params={"tenant": "t1"}, headers=PLATFORM)).status_code == 200
+    assert (await c.get("/admin/documents", params={"tenant": "t1"}, headers=T1ADMIN)).status_code == 200
 
 
 async def test_the_dead_letter_view_never_returns_document_text(tmp_path: Path) -> None:

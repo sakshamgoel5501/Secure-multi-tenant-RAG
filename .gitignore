@@ -13,3 +13,4 @@ backend/data/golden.json
 node_modules/
 .next/
 deploy/.env
+backend/data/blobs/

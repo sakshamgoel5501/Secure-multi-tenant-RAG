@@ -1,18 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ACCESS_COOKIE, accessToken } from "@/lib/access";
+import { SESSION_COOKIE } from "@/lib/server/session";
 
-export async function proxy(req: NextRequest) {
-  const password = process.env.APP_ACCESS_PASSWORD;
-  if (!password) return NextResponse.next(); // gate off (local dev)
-
+/** Only checks that a session cookie exists. The backend validates it on every call. */
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
-
-  const expected = await accessToken(password, process.env.RAG_JWT_SECRET ?? "");
-  if (req.cookies.get(ACCESS_COOKIE)?.value === expected) return NextResponse.next();
-
+  if (pathname === "/login" || pathname === "/api/auth/login") return NextResponse.next();
+  if (req.cookies.get(SESSION_COOKIE)?.value) return NextResponse.next();
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "access password required" }, { status: 401 });
+    return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
   return NextResponse.redirect(new URL("/login", req.url));
 }

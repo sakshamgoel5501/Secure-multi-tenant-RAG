@@ -28,6 +28,9 @@ real = [
     "fastembed",
     "google-genai",
     "redis",
+    "pypdf", 
+    "python-docx", 
+    "python-multipart",
 ]
 load = ["locust"]
 agent = ["mcp>=1.2,<2"]
@@ -48,7 +51,7 @@ mypy_path = "src"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg", "asyncpg.*", "fastembed", "fastembed.*", "google", "google.*", "qdrant_client", "qdrant_client.*", "mcp", "mcp.*"]
+module = ["asyncpg", "asyncpg.*", "fastembed", "fastembed.*", "google", "google.*", "qdrant_client", "qdrant_client.*", "mcp", "mcp.*", "docx", "docx.*", "multipart", "multipart.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

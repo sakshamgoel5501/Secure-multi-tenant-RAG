@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Sequence, AsyncIterator
 
 from domain.errors import AuthzUnavailable
 from domain.models import (
@@ -107,6 +107,15 @@ class ChaosLLM:
     async def generate(self, system: str, user: str) -> str:
         await self._faults.hit("llm")
         return await self._inner.generate(system, user)
+    
+    async def stream(self, system: str, user: str) -> AsyncIterator[str]:
+        await self._faults.hit("llm")
+        inner = getattr(self._inner, "stream", None)
+        if inner is None:
+            yield await self._inner.generate(system, user)
+            return
+        async for chunk in inner(system, user):
+            yield chunk
 
 
 class ChaosAcl:

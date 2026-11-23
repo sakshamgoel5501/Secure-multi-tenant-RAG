@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { usePersona } from "@/components/persona-provider";
+import { useSession } from "@/components/session-provider";
 
 type Detail = {
   status: string;
@@ -22,6 +22,7 @@ type Footprint = {
   chunks: Record<string, Record<string, number>>;
   events: number;
   content_left: boolean;
+  files?: { version: number; kind: string; bytes: number }[];
 };
 
 function chunkText(v: Record<string, number> | undefined) {
@@ -37,7 +38,8 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   const [title, setTitle] = useState(id);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const { persona } = usePersona();
+  const { account } = useSession();
+  const [file, setFile] = useState<File | null>(null);
 
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((n) => n + 1), []);
@@ -71,16 +73,27 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
   async function publish() {
     setBusy(true);
     setNote(null);
-    const r = await fetch(`/api/admin/documents/${id}/versions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant, title, text }),
-    }).catch(() => null);
+    let r: Response | null;
+    if (file) {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("tenant_id", tenant);
+      form.set("document_id", id);
+      form.set("title", title);
+      r = await fetch("/api/upload", { method: "POST", body: form }).catch(() => null);
+    } else {
+      r = await fetch(`/api/admin/documents/${id}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: tenant, title, text }),
+      }).catch(() => null);
+    }
     const body = await r?.json().catch(() => null);
     if (!r || !r.ok) setError(body?.error ?? "Publish failed.");
     else {
       setNote(`Version ${body.version} published. It goes live once ingestion finishes.`);
       setText("");
+      setFile(null);
     }
     setBusy(false);
     refresh();
@@ -107,7 +120,8 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
       const c = body.chunks_deleted as Record<string, number>;
       setNote(
         `Purged: ${Object.values(c).reduce((a, b) => a + b, 0)} chunks, ${body.events_deleted} queue events` +
-          `${body.acl_removed ? ", the access list" : ""}. A content-free tombstone is kept so old events cannot bring it back.`,
+          `${body.acl_removed ? ", the access list" : ""}. A content-free tombstone is kept so old events cannot bring it back.` +
+          `${body.blobs_deleted ?? 0} stored files`,
       );
     }
     setBusy(false);
@@ -158,6 +172,12 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
               <dt className="text-muted-foreground">Access list</dt>
               <dd>{footprint.has_acl ? "present" : "removed"}</dd>
               <dt className="text-muted-foreground">Queue events (with text)</dt>
+              <dt className="text-muted-foreground">Stored files</dt>
+              <dd>
+                {footprint.files?.length
+                  ? footprint.files.map((f) => `v${f.version} ${f.kind} (${f.bytes} B)`).join(", ")
+                  : "none"}
+              </dd>
               <dd>{footprint.events}</dd>
               <dt className="text-muted-foreground">State row</dt>
               <dd>{footprint.state ?? "none"} (ids and version numbers only, no text)</dd>
@@ -166,7 +186,7 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
               <Button 
                 variant="outline" 
                 size="sm" onClick={purge} 
-                disabled={busy || !footprint.content_left || persona?.admin === "group"}
+                disabled={busy || !footprint.content_left || account?.role === "group_admin"}
                 title="Only tenant or platform administrators can purge"
               >
                 Purge all stored copies
@@ -188,10 +208,13 @@ export function DocumentDetail({ id, tenant }: { id: string; tenant: string }) {
             onChange={(e) => setTitle(e.target.value)}
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           />
+          <input type="file" accept=".pdf,.docx,.txt,.md,.markdown"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-xs text-muted-foreground" />
           <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} placeholder="New text" />
           <div className="flex justify-between">
             <Button variant="outline" onClick={remove} disabled={busy}>Delete document</Button>
-            <Button onClick={publish} disabled={busy || !text.trim() || !title.trim()}>Publish version</Button>
+            <Button onClick={publish} disabled={busy || (!file && !text.trim()) || !title.trim()}>Publish version</Button>
           </div>
           {note && <p className="text-xs text-muted-foreground">{note}</p>}
         </CardContent>

@@ -4,6 +4,7 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from domain.accounts import Account
 from domain.models import DocumentEvent, DocumentId, DocumentState, GroupId, TenantId
 
 
@@ -95,7 +96,47 @@ class AuditEntry:
 class AuditLog(Protocol):
     async def record(self, entry: AuditEntry) -> None: ...
 
-    async def list_entries(self, tenant: str | None, limit: int) -> list[AuditEntry]:
-        """Newest first. tenant=None means every tenant."""
+    async def list_entries(
+        self, tenant: str | None, limit: int, *, prefixes: tuple[str, ...] | None = None
+    ) -> list[AuditEntry]:
+        """Newest first. tenant=None means every tenant. `prefixes` keeps only matching actions."""
         ...
 
+
+class AccountStore(Protocol):
+    async def get(self, username: str) -> Account | None: ...
+
+    async def list_accounts(self, tenant: str | None, limit: int) -> list[Account]: ...
+
+    async def create(self, account: Account) -> bool:
+        """False if the username is taken."""
+        ...
+
+    async def save(self, account: Account) -> None: ...
+
+    async def delete(self, username: str) -> bool: ...
+
+    async def count_active_platform_admins(self) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class BlobInfo:
+    version: int
+    kind: str  # "original", "text" or "meta"
+    size: int
+
+
+class BlobStore(Protocol):
+    """Keeps the originals and extracted text of documents, keyed by tenant, document, version."""
+
+    async def put(self, tenant_id: TenantId, document_id: DocumentId, version: int, kind: str, data: bytes) -> None: ...
+
+    async def get(self, tenant_id: TenantId, document_id: DocumentId, version: int, kind: str) -> bytes | None: ...
+
+    async def list_blobs(self, tenant_id: TenantId, document_id: DocumentId) -> list[BlobInfo]: ...
+
+    async def delete_document(self, tenant_id: TenantId, document_id: DocumentId) -> int:
+        """Remove everything stored for the document. Returns how many items were removed."""
+        ...
+
+        

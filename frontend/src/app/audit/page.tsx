@@ -20,7 +20,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/audit")
+    fetch("/api/admin/audit?limit=200")
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => null) }))
       .then(({ ok, body }) => {
         if (cancelled) return;

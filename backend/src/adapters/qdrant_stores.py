@@ -177,11 +177,19 @@ class QdrantLexicalStore:
     tenants' term frequencies; isolation of *content* is unaffected. Mention this trade-off."""
 
     def __init__(
-        self, client: AsyncQdrantClient, prefix: str = "rag", model_name: str = "Qdrant/bm25"
+        self,
+        client: AsyncQdrantClient,
+        prefix: str = "rag",
+        model_name: str = "Qdrant/bm25",
+        model: SparseTextEmbedding | None = None,
     ) -> None:
         self._client = client
         self._collection = f"{prefix}_lexical"
-        self._model = SparseTextEmbedding(model_name=model_name)
+        self._model = model if model is not None else SparseTextEmbedding(model_name=model_name)
+
+    @property
+    def model(self) -> SparseTextEmbedding:
+        return self._model
 
     async def ensure(self) -> None:
         if await self._client.collection_exists(self._collection):

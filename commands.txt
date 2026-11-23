@@ -1,4 +1,18 @@
 Make RAG_ADMIN_KEY at least 32 characters. openssl rand -hex 24 gives 48, which is fine, but a shorter value now stops the backend from starting
 
 
+# backend
+cd backend && rag test
+export RAG_JWT_SECRET=dev-secret-for-local-testing-0123456789
+export RAG_ADMIN_KEY=dev-secret-for-local-testing-0123456790
+export RAG_BOOTSTRAP_ADMIN_USER=platform
+export RAG_BOOTSTRAP_ADMIN_PASSWORD='bootstrap-password-123'
+rag serve --jwt --admin
+
+# second terminal
+cd backend && rag seed-users --password 'demo-password-1234'
+
+# third terminal
+cd frontend && npm run lint && npm run build && npm run dev
+
 

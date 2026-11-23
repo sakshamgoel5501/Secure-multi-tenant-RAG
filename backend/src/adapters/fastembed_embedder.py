@@ -6,13 +6,21 @@ from collections.abc import Sequence
 from fastembed import TextEmbedding
 
 
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_DIM = 384
+
+
+def model_version_for(model_name: str) -> str:
+    return f"fastembed-{model_name.split('/')[-1]}"
+
+
 class FastEmbedEmbedder:
     """Local ONNX embeddings (CPU). Inference runs in a thread so it never blocks the event loop."""
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-small-en-v1.5",
-        dim: int = 384,
+        model_name: str = DEFAULT_MODEL,
+        dim: int = DEFAULT_DIM,
         cache_dir: str = ".model_cache",
     ) -> None:
         self._model_name = model_name
@@ -21,7 +29,7 @@ class FastEmbedEmbedder:
 
     @property
     def model_version(self) -> str:
-        return f"fastembed-{self._model_name.split('/')[-1]}"
+        return model_version_for(self._model_name)
 
     @property
     def dim(self) -> int:

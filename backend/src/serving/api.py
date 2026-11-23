@@ -1,10 +1,11 @@
+import json
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, AsyncIterator
 from contextlib import AbstractAsyncContextManager
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from domain.errors import AuthzUnavailable, RetrievalUnavailable, StateUnavailable
@@ -57,6 +58,7 @@ class AskResponse(BaseModel):
     grounded: bool
     degraded: list[str]
     citations: list[CitationOut]
+    plan: list[str] = Field(default_factory=list)
 
 
 def get_security_context(
@@ -77,6 +79,10 @@ def get_security_context(
 def _unavailable(detail: str) -> JSONResponse:
     # Generic on purpose: epochs and backend names stay in logs, not in responses.
     return JSONResponse(status_code=503, content={"detail": detail}, headers={"Retry-After": "1"})
+
+
+def _sse(event: str, data: dict[str, object]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"  # json.dumps never emits a raw newline
 
 
 def create_app(
@@ -177,6 +183,26 @@ def create_app(
                     )
                     for c in result.citations
                 ],
+                plan=list(result.plan),
+            )
+        
+        @app.post("/ask/stream")
+        async def ask_stream(
+            body: AskRequest,
+            ctx: Annotated[SecurityContext, Depends(ctx_dep)],
+        ) -> StreamingResponse:
+            # Retrieval and authorization happen here, before any bytes are sent, so a failure is
+            # still a clean 503 and not a broken stream.
+            prepared = await answers.prepare(ctx, body.question, body.top_k)
+
+            async def events() -> AsyncIterator[str]:
+                async for name, payload in answers.stream(prepared):
+                    yield _sse(name, payload)
+
+            return StreamingResponse(
+                events(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
             )
 
     return app

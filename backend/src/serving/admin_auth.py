@@ -1,8 +1,12 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import jwt
 from fastapi import HTTPException, Request
+
+from domain.accounts import Role
+from domain.ops_ports import AccountStore
+from serving.accounts_check import live_account
 
 ADMIN_AUDIENCE = "rag-admin"  # user tokens use "rag", so neither works as the other
 
@@ -23,16 +27,19 @@ class Principal:
         return self.role == "group_admin"
 
     def can_manage(self, tenant: str) -> bool:
-        """Tenant-level reach. Group admins are further limited per document by the routes."""
-        return self.platform or (self.role in ("tenant_admin", "group_admin") and self.tenant == tenant)
+        """Tenant-level reach. Platform administrators have none: tenant data is the tenant's own.
+        Group admins are further limited per document by the routes."""
+        return self.role in ("tenant_admin", "group_admin") and self.tenant == tenant
 
 
 def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"})
 
 
-def admin_identity(secret: str) -> Callable[[Request], Principal]:
-    def identity(request: Request) -> Principal:
+def admin_identity(
+    secret: str, accounts: AccountStore | None = None
+) -> Callable[[Request], Awaitable[Principal]]:
+    async def identity(request: Request) -> Principal:
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise _unauthorized("admin token required")
@@ -47,6 +54,14 @@ def admin_identity(secret: str) -> Callable[[Request], Principal]:
         except jwt.InvalidTokenError:
             raise _unauthorized("invalid or expired admin token") from None
         actor = str(claims["sub"])
+
+        if accounts is not None:
+            account = await live_account(accounts, claims)
+            if account.role is Role.USER:
+                raise _unauthorized("not an administrator account")
+            group = account.groups[0] if account.role is Role.GROUP_ADMIN else None
+            return Principal(actor, account.role.value, account.tenant, group)
+
         role, tenant, group = claims.get("role"), claims.get("tenant"), claims.get("group")
         if role == "platform_admin":
             return Principal(actor, role, None)

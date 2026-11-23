@@ -106,20 +106,51 @@ events in a hostile order (late versions, updates after a delete, a delayed upda
 `frontend/src/app/lifecycle/page.tsx` page shows the authoritative state next to what a search
 returns, so a stale or half-written version can be seen failing to appear.
 
-## Administration: roles, scope and audit
+## Accounts, roles and audit
 
-Admin routes (`backend/src/serving/admin.py`) require a signed token with a role
-(`backend/src/serving/admin_auth.py`). A platform admin manages every tenant. A tenant admin is
-limited to one tenant, and the backend checks that on each route. Admin tokens carry a different
-audience from user tokens, so neither works as the other. Admins manage documents and access lists
-but have no route that returns document text.
+**Identity.** Accounts live in Postgres (`backend/src/adapters/postgres_accounts.py`). A platform
+administrator creates them and the server generates a one-time password, so the person must choose
+their own at first sign-in. Passwords are hashed with scrypt. Sign-in failures are generic, so a
+caller can't tell a wrong password from an unknown name, a locked account or a disabled one, and
+five failures lock the account for 15 minutes.
 
-Every change writes an audit entry before it is made (`backend/src/adapters/postgres_audit.py`),
-and is refused if the entry can't be written. Denied attempts are recorded as well. Entries hold
-titles, groups, versions and sizes, never document text, so a purge doesn't leave content behind.
+**Sessions are checked against the account on every request**
+(`backend/src/serving/accounts_check.py`). The token only names the account. Role, tenant, groups,
+disabled state and password version come from the live row, so disabling someone, resetting a
+password or changing their groups takes effect on the next request rather than at token expiry. The
+price is one indexed lookup per request.
 
-Limit: in the demo UI, the frontend decides which token an identity receives, behind a shared admin
-password. A production system would take roles from an identity provider.
+**Roles are enforced in the backend** (`backend/src/serving/admin.py`). Admin tokens carry a
+different audience from user tokens, so neither works as the other. A group administrator reaches
+only documents their group can read; a document they can't see and one that doesn't exist both
+answer 403. A platform administrator has no route to tenant data at all. Administrators manage
+documents and access lists but have no route that returns document text.
+
+**Audit.** Every change writes an entry first and is refused if the entry can't be written. Denied
+attempts and sign-ins are recorded. Entries hold titles, groups, versions and sizes, never document
+text or passwords, so a purge doesn't leave content behind. Tenant administrators read their own
+tenant's entries; platform administrators read only account and sign-in events.
+
+**The frontend holds no secrets** (`frontend/src/app/api/`). It keeps the session in an httpOnly
+cookie and forwards calls, and the backend does the authorizing.
+
+**Limit.** There is no email verification, MFA or self-service reset. A production system would take
+roles from an identity provider.
+
+## Per-tenant collections and file storage
+
+**Silo mode.** A tenant can have its own Qdrant collections (`backend/src/adapters/tenant_routing.py`).
+Routing follows the tenant on the request context, which comes from the account. The collection still
+filters by tenant, and the query service re-checks it, so a routing bug alone can't leak. The silo
+also removes the shared BM25 statistics. The cost is one collection pair per silo, so the sensible
+split is a few large tenants in silos and the long tail in the pool. `rag migrate-tenant` copies
+points between layouts, checks counts, and deletes the source only after the copy is confirmed.
+
+**Files.** A document's original file, extracted text and title are stored per version behind a
+`BlobStore` port. The extracted text is what citation offsets refer to, so keeping it makes offsets
+checkable and lets the reconciler rebuild an index from storage. Parsing is bounded in bytes, pages,
+unzipped size and characters, and runs off the event loop with a timeout. Purge removes the stored
+files; the audit log records type and size, never the file name.
 
 ## Decisions and trade-offs
 

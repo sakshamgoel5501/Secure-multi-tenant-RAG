@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import AsyncIterator
 
 import asyncio
 import logging
@@ -55,6 +56,26 @@ class ResilientLLM:
         finally:
             for task in pending:
                 task.cancel()
+
+    
+    async def stream(self, system: str, user: str) -> AsyncIterator[str]:
+        """Streams the inner model. A failure before the first piece is retried; after that the
+        error propagates, because a half-sent answer can't be replayed. No hedging here."""
+        inner = getattr(self._inner, "stream", None)
+        if inner is None:
+            yield await self.generate(system, user)
+            return
+        for attempt in range(self._max_attempts):
+            started = False
+            try:
+                async for chunk in inner(system, user):
+                    started = True
+                    yield chunk
+                return
+            except Exception as exc:  # noqa: BLE001
+                if started or attempt + 1 >= self._max_attempts:
+                    raise
+                log.warning("LLM stream failed before the first piece: %r", exc)
 
 
                 

@@ -60,12 +60,18 @@ class PostgresAuditLog:
             json.dumps(entry.detail),
         )
 
-    async def list_entries(self, tenant: str | None, limit: int) -> list[AuditEntry]:
+    async def list_entries(
+        self, tenant: str | None, limit: int, *, prefixes: tuple[str, ...] | None = None
+    ) -> list[AuditEntry]:
         rows = await self._p().fetch(
             "SELECT at, actor, role, tenant, action, target, detail FROM audit_log "
-            "WHERE ($1::text IS NULL OR tenant = $1) ORDER BY id DESC LIMIT $2",
+            "WHERE ($1::text IS NULL OR tenant = $1) "
+            "AND ($3::text[] IS NULL OR EXISTS "
+            "(SELECT 1 FROM unnest($3::text[]) AS p WHERE action LIKE p || '%')) "
+            "ORDER BY id DESC LIMIT $2",
             tenant,
             limit,
+            list(prefixes) if prefixes else None,
         )
         return [
             AuditEntry(
@@ -73,7 +79,7 @@ class PostgresAuditLog:
                 json.loads(r["detail"]), r["at"].isoformat(),
             )
             for r in rows
-        ]
+        ]  # fmt: skip
     
 
     

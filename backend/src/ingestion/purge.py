@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from domain.models import DocumentId, TenantId
-from domain.ops_ports import AclAdmin, AclEraser, DocumentIndexAudit, EventPurger
+from domain.ops_ports import AclAdmin, AclEraser, BlobStore, DocumentIndexAudit, EventPurger
 from domain.ports import DocStateStore
 
 
@@ -18,10 +18,11 @@ class Footprint:
     has_acl: bool
     chunks: dict[str, dict[int, int]]  # index name -> version -> chunk count
     events: int  # stream and dead-letter entries that still carry the text
+    blobs: int = 0  # stored originals, extracted text and meta records
 
     @property
     def content_left(self) -> bool:
-        return self.has_acl or self.events > 0 or any(self.chunks.values())
+        return self.has_acl or self.events > 0 or self.blobs > 0 or any(self.chunks.values())
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +32,7 @@ class PurgeReport:
     acl_removed: bool
     epoch: int | None
     after: Footprint
+    blobs_deleted: int = 0
 
 
 class Purger:
@@ -38,10 +40,10 @@ class Purger:
 
     It keeps one content-free tombstone (ids and a version number) in the state table. Without
     it, a late or replayed old event could resurrect the document. Order matters: tombstone
-    first, so the document is invisible at once; then the ACL; then a sweep of events and chunks.
-    The sweep runs twice to catch a worker that was mid-write. A worker that is still running when
-    the second sweep ends could leave orphan chunks, which the reconciler removes because the
-    document is tombstoned. The footprint shows them if so.
+    first, so the document is invisible at once; then the ACL; then a sweep of events and chunks,
+    then the stored files. The sweep runs twice to catch a worker that was mid-write. A worker that
+    is still running when the second sweep ends could leave orphan chunks, which the reconciler
+    removes because the document is tombstoned. The footprint shows them if so.
     """
 
     def __init__(
@@ -50,11 +52,14 @@ class Purger:
         acls: AclStore,
         indexes: Mapping[str, DocumentIndexAudit],
         events: EventPurger,
+        *,
+        blobs: BlobStore | None = None,
     ) -> None:
         self._states = states
         self._acls = acls
         self._indexes = indexes
         self._events = events
+        self._blobs = blobs
 
     async def footprint(self, tenant: TenantId, doc: DocumentId) -> Footprint:
         state = await self._states.get(tenant, doc)
@@ -66,6 +71,7 @@ class Purger:
                 for name, idx in self._indexes.items()
             },
             events=await self._events.count_document_events(tenant, doc),
+            blobs=len(await self._blobs.list_blobs(tenant, doc)) if self._blobs else 0,
         )
 
     async def purge(self, tenant: TenantId, doc: DocumentId) -> PurgeReport:
@@ -85,8 +91,7 @@ class Purger:
                 versions = await idx.document_versions(tenant, doc)
                 if versions:
                     deleted[name] += await idx.delete_versions(tenant, doc, set(versions))
-        return PurgeReport(deleted, events, had_acl, epoch, await self.footprint(tenant, doc))
+        blobs = await self._blobs.delete_document(tenant, doc) if self._blobs else 0
+        return PurgeReport(deleted, events, had_acl, epoch, await self.footprint(tenant, doc), blobs)
     
-
-
     

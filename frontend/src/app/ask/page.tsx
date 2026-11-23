@@ -1,20 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { usePersona } from "@/components/persona-provider";
+import { LoadingDots } from "@/components/loading-dots";
+import { useSession } from "@/components/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import type { AskResult } from "@/lib/types";
+import { readEvents } from "@/lib/sse";
+
+type Source = {
+  marker: string;
+  chunk_id: string;
+  document_id: string;
+  version: number;
+  title: string;
+  start_offset: number;
+  end_offset: number;
+  text: string;
+};
+type Final = {
+  answer: string;
+  grounded: boolean;
+  degraded: string[];
+  plan: string[];
+  citations: { marker: string }[];
+  timing: { first_token_ms: number | null; total_ms: number };
+};
+type Phase = "idle" | "searching" | "answering" | "done";
 
 const EXAMPLES = [
   "What is the team size for project amber-falcon-0?",
-  "Which project is tracked by ticket TKT-1001?",
+  "Which project is tracked by ticket TKT-1000 and which project is tracked by ticket TKT-1003?",
   "What is the annual budget for project amber-falcon-0?",
 ];
 
-function AnswerText({ text }: { text: string }) {
+function AnswerText({ text, live }: { text: string; live: boolean }) {
   return (
     <p className="leading-relaxed">
       {text.split(/(\[S\d+\])/g).map((part, i) =>
@@ -26,98 +47,74 @@ function AnswerText({ text }: { text: string }) {
           part
         ),
       )}
+      {live && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-middle" />}
     </p>
   );
 }
 
-const DETAIL_STAGES = ["embed", "dense", "lexical", "fuse", "state", "acl", "rerank"];
-
-function Timing({ timing }: { timing: Record<string, number> }) {
-  const total = timing.total ?? 0;
-  const retrieve = timing.retrieve ?? 0;
-  const generate = timing.generate ?? 0;
-  const other = Math.max(0, total - retrieve - generate);
-  const pct = (v: number) => (total > 0 ? `${(v / total) * 100}%` : "0%");
-  const details = DETAIL_STAGES.filter((k) => k in timing);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">
-          Where the time went <span className="text-muted-foreground">· {total.toFixed(0)} ms</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-          <div className="bg-foreground/80" style={{ width: pct(retrieve) }} title="retrieval" />
-          <div className="bg-foreground/40" style={{ width: pct(generate) }} title="generation" />
-          <div className="bg-foreground/15" style={{ width: pct(other) }} title="other" />
-        </div>
-        <div className="flex gap-4 text-xs text-muted-foreground">
-          <span>■ retrieval {retrieve.toFixed(0)} ms</span>
-          <span>■ generation {generate.toFixed(0)} ms</span>
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {details.map((k) => (
-            <span key={k}>
-              {k} {timing[k].toFixed(1)} ms
-            </span>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Dense and lexical search run in parallel, so retrieval sub-stages overlap and don&apos;t add up.
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function AskPage() {
-  const { persona } = usePersona();
+  const { account } = useSession();
   const [question, setQuestion] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [state, setState] = useState<{
-    personaId: string | undefined;
-    result: AskResult | null;
-    error: string | null;
-  }>({ personaId: undefined, result: null, error: null });
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [text, setText] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
+  const [plan, setPlan] = useState<string[]>([]);
+  const [final, setFinal] = useState<Final | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Results belong to the persona that asked. After a switch they are simply not shown.
-  const current = state.personaId === persona?.id ? state : { ...state, result: null, error: null };
-  const { result, error } = current;
+  const busy = phase === "searching" || phase === "answering";
 
   async function submit(q: string = question) {
-    if (!q.trim() || loading) return;
-    const forPersona = persona?.id;
-    setLoading(true);
-    setState({ personaId: forPersona, result: null, error: null });
+    if (!q.trim() || busy) return;
+    setError(null);
+    setText("");
+    setSources([]);
+    setPlan([]);
+    setFinal(null);
+    setPhase("searching");
     try {
-      const r = await fetch("/api/ask", {
+      const r = await fetch("/api/ask/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: q }),
       });
-      const body = await r.json();
-      setState(
-        r.ok
-          ? { personaId: forPersona, result: body as AskResult, error: null }
-          : { personaId: forPersona, result: null, error: body.error ?? `Request failed (${r.status})` },
-      );
+      if (!r.ok || !r.body) {
+        const b = await r.json().catch(() => null);
+        setError(b?.error ?? `Request failed (${r.status})`);
+        setPhase("idle");
+        return;
+      }
+      for await (const { event, data } of readEvents(r.body)) {
+        if (event === "sources") {
+          const d = data as { sources: Source[]; plan: string[] };
+          setSources(d.sources);
+          setPlan(d.plan);
+          setPhase("answering");
+        } else if (event === "delta") {
+          setText((t) => t + (data as { text: string }).text);
+        } else if (event === "final") {
+          setFinal(data as Final);
+          setPhase("done");
+        }
+      }
+      setPhase((p) => (p === "done" ? p : "idle"));
     } catch {
-      setState({ personaId: forPersona, result: null, error: "Could not reach the frontend server." });
-    } finally {
-      setLoading(false);
+      setError("The connection was interrupted.");
+      setPhase("idle");
     }
   }
+
+  const shown = final ? final.answer : text;
+  const cited = final ? sources.filter((s) => final.citations.some((c) => c.marker === s.marker)) : [];
 
   return (
     <div className="max-w-3xl space-y-6">
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Ask</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Answers come only from documents{" "}
-          <span className="font-medium text-foreground">{persona?.label ?? "…"}</span> may read, with
-          citations you can check against the source text.
+          Answers come only from documents <span className="font-medium text-foreground">{account?.username ?? "…"}</span>{" "}
+          may read, with citations you can check against the source text. Questions with several parts are split and
+          searched separately.
         </p>
       </header>
 
@@ -131,7 +128,7 @@ export default function AskPage() {
           placeholder="Ask a question about the documents…"
           rows={3}
         />
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex flex-wrap gap-2">
             {EXAMPLES.map((ex) => (
               <button
@@ -140,14 +137,14 @@ export default function AskPage() {
                   setQuestion(ex);
                   submit(ex);
                 }}
-                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted/60"
+                className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground hover:bg-muted/60"
               >
                 {ex}
               </button>
             ))}
           </div>
-          <Button onClick={() => submit()} disabled={loading || !question.trim()}>
-            {loading ? "Thinking…" : "Ask"}
+          <Button onClick={() => submit()} disabled={busy || !question.trim()}>
+            {busy ? "Working…" : "Ask"}
           </Button>
         </div>
       </div>
@@ -160,54 +157,68 @@ export default function AskPage() {
         </Card>
       )}
 
-      {result && (
+      {phase === "searching" && <LoadingDots label="Searching" />}
+
+      {phase !== "idle" && phase !== "searching" && (
         <div className="space-y-4">
+          {plan.length > 1 && (
+            <p className="text-xs text-muted-foreground">
+              Split into {plan.length} searches: {plan.map((p) => `“${p}”`).join(" · ")}
+            </p>
+          )}
           <Card>
             <CardContent className="space-y-4 pt-6">
-              <AnswerText text={result.data.answer} />
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={result.data.grounded ? "default" : "secondary"}>
-                  {result.data.grounded ? "grounded" : "not grounded"}
-                </Badge>
-                {result.data.degraded.map((d) => (
-                  <Badge key={d} variant="outline">
-                    degraded: {d}
+              {shown ? (
+                <AnswerText text={shown} live={phase === "answering"} />
+              ) : (
+                <LoadingDots label="Writing the answer" />
+              )}
+              {final && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={final.grounded ? "default" : "secondary"}>
+                    {final.grounded ? "grounded" : "not grounded"}
                   </Badge>
-                ))}
-              </div>
+                  {final.degraded.map((d) => (
+                    <Badge key={d} variant="outline">degraded: {d}</Badge>
+                  ))}
+                  <span className="text-xs text-muted-foreground">
+                    {final.timing.first_token_ms !== null && `first words after ${Math.round(final.timing.first_token_ms)} ms · `}
+                    done in {Math.round(final.timing.total_ms)} ms
+                  </span>
+                </div>
+              )}
+              {!final && sources.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Found {sources.length} passage{sources.length === 1 ? "" : "s"}. Citations are checked when the answer is complete.
+                </p>
+              )}
             </CardContent>
           </Card>
 
-          {result.data.citations.length > 0 && (
+          {cited.length > 0 && (
             <div className="space-y-2">
               <h2 className="text-sm font-medium">Sources</h2>
-              {result.data.citations.map((c) => {
-                const passage = result.passages.find((p) => p.chunk_id === c.chunk_id);
-                return (
-                  <Card key={c.chunk_id}>
-                    <CardContent className="space-y-2 pt-6">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          <span className="mr-2 rounded bg-muted px-1 font-medium">{c.marker}</span>
-                          {c.title}
-                        </span>
-                        <span className="font-mono">
-                          {c.document_id} v{c.version} · chars {c.start_offset}–{c.end_offset}
-                        </span>
-                      </div>
-                      {passage && <p className="text-sm leading-relaxed">{passage.text}</p>}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+              {cited.map((s) => (
+                <Card key={s.chunk_id}>
+                  <CardContent className="space-y-2 pt-6">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        <span className="mr-2 rounded bg-muted px-1 font-medium">{s.marker}</span>
+                        {s.title}
+                      </span>
+                      <span className="font-mono">
+                        {s.document_id} v{s.version} · chars {s.start_offset}–{s.end_offset}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed">{s.text}</p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
-
-          <Timing timing={result.timing} />
         </div>
       )}
     </div>
   );
 }
-
 

@@ -1,32 +1,21 @@
-// The /ask response carries citations but not passage text. So the route also calls /search with the same 
-// question, to show the text next to each citation. That is an extra retrieval call, for display only.
-
-
 import { NextResponse } from "next/server";
-import { currentPersona, mintToken } from "@/lib/server/auth";
 import { backendFetch, parseServerTiming } from "@/lib/server/backend";
+import { sessionToken } from "@/lib/server/session";
 import type { Citation, Passage } from "@/lib/types";
 
 export async function POST(req: Request) {
+  const token = await sessionToken();
+  if (!token) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const body = await req.json().catch(() => null);
   const question = typeof body?.question === "string" ? body.question.trim() : "";
   if (!question || question.length > 2000) {
     return NextResponse.json({ error: "Enter a question (up to 2000 characters)." }, { status: 422 });
   }
 
-  const persona = await currentPersona();
-  if (persona.admin) {
-    return NextResponse.json(
-      { error: "Administrators manage documents and don't read them. Switch to a user identity to ask." },
-      { status: 403 },
-    );
-  }
-  const token = await mintToken(persona);
   const init = {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
   };
-
   const [ask, search] = await Promise.allSettled([
     backendFetch("/ask", { ...init, body: JSON.stringify({ question, top_k: 5 }) }),
     backendFetch("/search", { ...init, body: JSON.stringify({ query: question, top_k: 5 }) }),
@@ -38,7 +27,12 @@ export async function POST(req: Request) {
   const r = ask.value;
   const data = await r.json().catch(() => null);
   if (!r.ok) {
-    const detail = typeof data?.detail === "string" ? data.detail : `backend returned ${r.status}`;
+    const detail =
+      r.status === 401
+        ? "Your session has ended. Sign in again."
+        : typeof data?.detail === "string"
+          ? data.detail
+          : `backend returned ${r.status}`;
     return NextResponse.json({ error: detail }, { status: r.status });
   }
 
@@ -48,13 +42,6 @@ export async function POST(req: Request) {
     const cited = new Set((data.citations as Citation[]).map((c) => c.chunk_id));
     passages = ((s?.hits ?? []) as Passage[]).filter((h) => cited.has(h.chunk_id));
   }
-
-  return NextResponse.json({
-    data,
-    passages,
-    timing: parseServerTiming(r.headers.get("server-timing")),
-  });
+  return NextResponse.json({ data, passages, timing: parseServerTiming(r.headers.get("server-timing")) });
 }
-
-
 

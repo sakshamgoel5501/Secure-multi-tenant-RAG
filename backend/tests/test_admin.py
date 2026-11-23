@@ -13,7 +13,8 @@ from domain.models import DocStatus, DocumentId, DocumentState, GroupId, TenantI
 from serving.admin import admin_key_from_env, create_admin_router
 
 KEY = "k" * 32
-H = admin_headers(KEY)
+H = admin_headers(KEY, "tenant_admin", "t1")
+P = admin_headers(KEY)  # platform
 T = TenantId("t1")
 D = DocumentId("d1")
 
@@ -98,8 +99,10 @@ async def test_documents_list_state_with_groups(tmp_path: Path) -> None:
 
 async def test_documents_are_tenant_scoped(tmp_path: Path) -> None:
     client, _ = await build(tmp_path)
-    r = await client.get("/admin/documents", params={"tenant": "t2"}, headers=H)
+    t2 = admin_headers(KEY, "tenant_admin", "t2")
+    r = await client.get("/admin/documents", params={"tenant": "t2"}, headers=t2)
     assert [d["document_id"] for d in r.json()["documents"]] == ["x"]
+    assert (await client.get("/admin/documents", params={"tenant": "t2"}, headers=H)).status_code == 403
 
 
 async def test_set_acl_changes_groups_and_returns_epoch(tmp_path: Path) -> None:
@@ -122,27 +125,27 @@ async def test_set_acl_on_unknown_document_is_404(tmp_path: Path) -> None:
 
 async def test_eval_is_404_without_a_report(tmp_path: Path) -> None:
     client, _ = await build(tmp_path)
-    assert (await client.get("/admin/eval", headers=H)).status_code == 404
+    assert (await client.get("/admin/eval", headers=P)).status_code == 404
 
 
 async def test_eval_reports_gate_failures(tmp_path: Path) -> None:
     (tmp_path / "eval_report.json").write_text(json.dumps({"recall_at_5": 0.5}))
     (tmp_path / "baseline.json").write_text(json.dumps({"recall_at_5": 0.95}))
     client, _ = await build(tmp_path)
-    body = (await client.get("/admin/eval", headers=H)).json()
+    body = (await client.get("/admin/eval", headers=P)).json()
     assert body["report"] == {"recall_at_5": 0.5}
     assert "recall_at_5" in body["gate_failures"][0]
 
 
 async def test_dlq_lists_entries(tmp_path: Path) -> None:
     client, _ = await build(tmp_path)
-    body = (await client.get("/admin/dlq", headers=H)).json()
+    body = (await client.get("/admin/dlq", headers=P)).json()
     assert body["pending"] == 2 and body["entries"][0]["error"] == "boom"
 
 
 async def test_dlq_with_bus_down_is_503(tmp_path: Path) -> None:
     client, _ = await build(tmp_path, Bus(down=True))
-    assert (await client.get("/admin/dlq", headers=H)).status_code == 503
+    assert (await client.get("/admin/dlq", headers=P)).status_code == 503
 
 
 def test_admin_is_disabled_by_default() -> None:

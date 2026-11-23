@@ -1,10 +1,5 @@
-import { AdminGate } from "@/components/admin-gate";
+import { RoleGate } from "@/components/role-gate";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return (
-    <AdminGate need="lifecycle" tenant="tenant-1">
-      {children}
-    </AdminGate>
-  );
+  return <RoleGate allow={["tenant_admin","group_admin"]} need="lifecycle">{children}</RoleGate>;
 }
-

@@ -48,4 +48,40 @@ async def test_single_attempt_never_hedges() -> None:
     assert inner.calls == 1
 
 
+class StreamScripted:
+    """Each call takes the next script: a list of pieces, ending in an exception to raise."""
+
+    def __init__(self, script: list[list[str | Exception]]) -> None:
+        self.script, self.calls = script, 0
+
+    async def generate(self, system: str, user: str) -> str:
+        return ""
+
+    async def stream(self, system: str, user: str):  # type: ignore[no-untyped-def]
+        steps = self.script[self.calls]
+        self.calls += 1
+        for step in steps:
+            if isinstance(step, Exception):
+                raise step
+            yield step
+
+
+async def collect(llm: ResilientLLM) -> list[str]:
+    return [piece async for piece in llm.stream("s", "u")]
+
+
+async def test_stream_retries_a_failure_before_the_first_piece() -> None:
+    inner = StreamScripted([[RuntimeError("429")], ["hello ", "world"]])
+    assert await collect(ResilientLLM(inner, max_attempts=2, hedge_after=None)) == ["hello ", "world"]
+    assert inner.calls == 2
+
+
+async def test_stream_does_not_retry_after_output_started() -> None:
+    inner = StreamScripted([["partial ", RuntimeError("cut")], ["never used"]])
+    with pytest.raises(RuntimeError):
+        await collect(ResilientLLM(inner, max_attempts=2, hedge_after=None))
+    assert inner.calls == 1
+
+
+
     

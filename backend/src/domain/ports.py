@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Sequence, AsyncIterator
 from typing import Protocol
 
 from domain.models import (
@@ -13,6 +13,7 @@ from domain.models import (
     SearchHit,
     SecurityContext,
     TenantId,
+    ParsedFile,
 )
 
 
@@ -180,7 +181,24 @@ class EpochSource(Protocol):
 
 
         
+class StreamingLLM(Protocol):
+    def stream(self, system: str, user: str) -> AsyncIterator[str]:
+        """Yields the answer in pieces as the model writes it."""
+        ...
 
+
+class Decomposer(Protocol):
+    async def decompose(self, query: str) -> list[str]:
+        """Split a multi-part question into independent sub-questions, or return an empty list
+        or a single item when there is nothing to split."""
+        ...
+
+
+class FileParser(Protocol):
+    def parse(self, data: bytes) -> ParsedFile:
+        """Extract text from a file's bytes, detecting the type from the content.
+        Raises FileRejected with a message safe to show the uploader."""
+        ...
         
 
 

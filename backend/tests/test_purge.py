@@ -11,12 +11,13 @@ from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocumentId, DocumentState, GroupId, PromotionOutcome, TenantId
 from ingestion.purge import Purger
 from serving.admin import create_admin_router
+from adapters.memory_blobs import InMemoryBlobStore
 
 T = TenantId("t1")
 OTHER = TenantId("t2")
 D = DocumentId("d1")
 KEY = "k" * 32
-H = admin_headers(KEY)
+H = admin_headers(KEY, "tenant_admin", "t1")
 _Key = tuple[TenantId, DocumentId]
 
 
@@ -165,8 +166,9 @@ async def client(e: Env, tmp_path: Path) -> httpx.AsyncClient:
 async def test_admin_routes_report_and_purge(tmp_path: Path) -> None:
     c = await client(await env(), tmp_path)
     assert (await c.get("/admin/capabilities", headers=H)).json() == {
-        "lifecycle": False,
-        "purge": True,
+        "lifecycle": False, 
+        "purge": True, 
+        "files": False,
     }
     before = (await c.get("/admin/documents/d1/footprint", params={"tenant": "t1"}, headers=H)).json()
     assert before["content_left"] is True
@@ -181,4 +183,54 @@ async def test_purge_needs_the_key_and_a_known_document(tmp_path: Path) -> None:
     assert r.status_code == 404 and r.json()["detail"] == "unknown document"
 
 
+async def test_footprint_marks_chunks_that_are_not_the_live_version(tmp_path: Path) -> None:
+    e = await env()
+    e.dense.data[(T, D)][2] = 2  # leftovers of a write that never got promoted
+    c = await client(e, tmp_path)
+    body = (await c.get("/admin/documents/d1/footprint", params={"tenant": "t1"}, headers=H)).json()
+    assert body["live_version"] == 1
+    assert body["unreachable"] == {"dense": {"2": 2}, "lexical": {}}
+
+
+async def test_after_a_delete_every_chunk_is_unreachable(tmp_path: Path) -> None:
+    e = await env()
+    await e.state.tombstone(T, D, 5)
+    c = await client(e, tmp_path)
+    body = (await c.get("/admin/documents/d1/footprint", params={"tenant": "t1"}, headers=H)).json()
+    assert body["live_version"] is None
+    assert body["unreachable"] == {"dense": {"1": 3}, "lexical": {"1": 3}}
+
+    
+async def test_purge_removes_stored_files_but_only_for_that_document(tmp_path: Path) -> None:
+    e = await env()
+    blobs = InMemoryBlobStore()
+    await blobs.put(T, D, 1, "text", b"secret text")
+    await blobs.put(T, D, 1, "original", b"%PDF")
+    await blobs.put(OTHER, D, 1, "text", b"someone else's")
+    purger = Purger(e.state, e.acls, {"dense": e.dense, "lexical": e.lexical}, e.events, blobs=blobs)
+    before = await purger.footprint(T, D)
+    assert before.blobs == 2 and before.content_left
+    report = await purger.purge(T, D)
+    assert report.blobs_deleted == 2 and not report.after.content_left
+    assert await blobs.get(OTHER, D, 1, "text") == b"someone else's"
+
+
+async def test_the_footprint_route_lists_stored_files(tmp_path: Path) -> None:
+    e = await env()
+    blobs = InMemoryBlobStore()
+    await blobs.put(T, D, 1, "text", b"abc")
+    purger = Purger(e.state, e.acls, {"dense": e.dense, "lexical": e.lexical}, e.events, blobs=blobs)
+    app = FastAPI()
+    app.include_router(
+        create_admin_router(
+            e.state, Scanner(), e.acls, Dlq(), admin_key=KEY, data_dir=tmp_path,
+            audit=InMemoryAuditLog(), purger=purger, blobs=blobs,
+        )
+    )  # fmt: skip
+    c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    body = (await c.get("/admin/documents/d1/footprint", params={"tenant": "t1"}, headers=H)).json()
+    assert body["files"] == [{"version": 1, "kind": "text", "bytes": 3}] and body["blobs"] == 1
+
+
+    
     

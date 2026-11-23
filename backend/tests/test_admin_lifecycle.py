@@ -28,7 +28,7 @@ from ingestion.worker import IngestionWorker
 from serving.admin import create_admin_router
 
 KEY = "k" * 32
-H = admin_headers(KEY)
+H = admin_headers(KEY, "tenant_admin", "t1")
 T = TenantId("t1")
 CTX = SecurityContext(T, UserId("u"), frozenset({GroupId("g")}), 1)
 
@@ -244,7 +244,7 @@ async def test_bus_down_is_503(tmp_path: Path) -> None:
 async def test_detail_is_tenant_scoped(tmp_path: Path) -> None:
     env = build(tmp_path)
     doc_id = await create(env)
-    assert (await detail(env, doc_id, tenant="t2")).status_code == 404
+    assert (await detail(env, doc_id, tenant="t2")).status_code == 403
 
 
 @pytest.mark.parametrize(

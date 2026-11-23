@@ -10,6 +10,7 @@ from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocStatus, DocumentId, DocumentState, GroupId, TenantId
 from serving.admin import create_admin_router
+from domain.ops_ports import AuditEntry
 
 KEY = "k" * 32
 T1, T2 = TenantId("t1"), TenantId("t2")
@@ -96,7 +97,7 @@ async def test_tenant_admin_manages_own_tenant_only(tmp_path: Path) -> None:
     other = await c.get("/admin/documents", params={"tenant": "t2"}, headers=ADMIN_T1)
     assert other.status_code == 403
     assert audit.entries[-1].action == "denied:documents.list"
-    assert (await c.get("/admin/documents", params={"tenant": "t2"}, headers=PLATFORM)).status_code == 200
+    assert (await c.get("/admin/documents", params={"tenant": "t2"}, headers=PLATFORM)).status_code == 403
 
 
 async def test_tenants_list_is_scoped(tmp_path: Path) -> None:
@@ -154,16 +155,18 @@ async def test_eval_and_queue_are_platform_only(tmp_path: Path) -> None:
 
 
 async def test_audit_view_is_scoped(tmp_path: Path) -> None:
-    c, _, _ = await build(tmp_path)
+    c, _, audit = await build(tmp_path)
     for tenant, doc in (("t1", "d1"), ("t2", "d2")):
         await c.put(
-            f"/admin/documents/{doc}/acl", json={"tenant_id": tenant, "groups": []}, headers=PLATFORM
-        )
+            f"/admin/documents/{doc}/acl", json={"tenant_id": tenant, "groups": []},
+            headers=admin_headers(KEY, "tenant_admin", tenant),
+        )  # fmt: skip
+    await audit.record(AuditEntry("root", "platform_admin", "t1", "user.create", "bob"))
     own = (await c.get("/admin/audit", headers=ADMIN_T1)).json()["entries"]
     assert {e["tenant"] for e in own} == {"t1"}
-    everything = (await c.get("/admin/audit", headers=PLATFORM)).json()["entries"]
-    assert {e["tenant"] for e in everything} == {"t1", "t2"}
+    platform = (await c.get("/admin/audit", headers=PLATFORM)).json()["entries"]
+    assert [e["action"] for e in platform] == ["user.create"]  # accounts, never tenant activity
     assert (await c.get("/admin/audit", params={"tenant": "t2"}, headers=ADMIN_T1)).status_code == 403
 
-
+    
     
