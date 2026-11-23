@@ -3,8 +3,8 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping
 import uuid
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn
 
@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from domain.errors import FileRejected
-
 from domain.models import (
     DocStatus,
     DocumentEvent,
@@ -20,26 +19,25 @@ from domain.models import (
     DocumentState,
     GroupId,
     Operation,
+    SearchHit,
+    SecurityContext,
     TenantId,
-    SearchHit, 
-    SecurityContext, 
     UserId,
 )
 from domain.ops_ports import (
+    AccountStore,
     AclAdmin,
     AuditEntry,
     AuditLog,
+    BlobStore,
     DeadLetterInspector,
     EventPublisher,
     StateScanner,
-    AccountStore,
-    BlobStore,
 )
 from domain.ports import DocStateStore, EpochSource, FileParser
 from eval.gate import check_gate
 from ingestion.purge import Footprint, Purger
 from serving.admin_auth import Principal, admin_identity
-
 
 log = logging.getLogger("rag.admin")
 
@@ -369,7 +367,7 @@ def create_admin_router(
             t, d = await known(tenant, document_id)
             try:
                 fp = await eraser.footprint(t, d)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("footprint failed: %r", exc)
                 raise HTTPException(status_code=503, detail="a backing store is unavailable") from exc
             state = await states.get(t, d)
@@ -453,7 +451,7 @@ def create_admin_router(
                 await blobs.put(t, d, version, "original", original)
             await blobs.put(t, d, version, "text", text.encode())
             await blobs.put(t, d, version, "meta", json.dumps({"title": title, "source": source}).encode())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("file store write failed: %r", exc)
             raise HTTPException(status_code=503, detail="file store unavailable; no change was made") from exc
 
@@ -532,7 +530,7 @@ def create_admin_router(
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             except TimeoutError:
                 raise HTTPException(status_code=422, detail="reading the file took too long") from None
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("file parsing failed: %r", exc)
                 raise HTTPException(status_code=422, detail="the file could not be read") from exc
             return data, parsed.text, f"file:{parsed.kind}"

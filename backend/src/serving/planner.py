@@ -34,7 +34,7 @@ class PlannedRetriever:
         try:
             with span("decompose"):
                 parts = await asyncio.wait_for(self._decomposer.decompose(query), self._timeout)
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("decomposition failed; using the original question", exc_info=True)
             single = await self._inner.retrieve_ex(ctx, query, top_k)
             return RetrievalResult(single.hits, (*single.degraded, "decompose"), single.queries)

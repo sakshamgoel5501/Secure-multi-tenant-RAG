@@ -1,10 +1,19 @@
 from collections.abc import Collection, Sequence
+from typing import Any
 
 from adapters.fake_embedder import HashEmbedder
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import (
-    AclSnapshot, ChunkId, DocumentId, EmbeddedChunk, GroupId, RetrievalSource,
-    SearchHit, SecurityContext, TenantId, UserId,
+    AclSnapshot,
+    ChunkId,
+    DocumentId,
+    EmbeddedChunk,
+    GroupId,
+    RetrievalSource,
+    SearchHit,
+    SecurityContext,
+    TenantId,
+    UserId,
 )  # fmt: skip
 from serving.query_service import QueryService
 
@@ -53,7 +62,7 @@ class AllowOnly:
         return AclSnapshot(min_epoch, {d: frozenset({G}) for d in document_ids if d in self._allowed})
 
 
-async def service(allowed: set[str], **kwargs: int) -> tuple[QueryService, RankedVectors]:
+async def service(allowed: set[str], **kwargs: Any) -> tuple[QueryService, RankedVectors]:
     state = InMemoryDocStateStore()
     for d in DOCS:
         await state.promote(T, d, 1)

@@ -28,7 +28,7 @@ async def ensure_bootstrap_admin(
             await asyncio.to_thread(hash_password, password),
             must_change_password=True,
             created_by="bootstrap",
-        )  # fmt: skip
+        )
     )
     if created:
         print(f"[startup] created the first platform administrator '{name}' (password change required)")

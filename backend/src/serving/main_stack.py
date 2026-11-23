@@ -17,13 +17,14 @@ from adapters.chaos import (
     ChaosVectorStore,
     Faults,
 )
-from adapters.llm_decomposer import LLMDecomposer
-from serving.planner import PlannedRetriever
-from serving.query_service import QueryService, Retriever
 from adapters.fake_llm import ExtractiveLLM
 from adapters.fastembed_embedder import FastEmbedEmbedder
 from adapters.fastembed_reranker import FastEmbedReranker
+from adapters.file_parsers import DefaultFileParser
 from adapters.gemini_llm import GeminiLLM
+from adapters.llm_decomposer import LLMDecomposer
+from adapters.local_blobs import LocalBlobStore
+from adapters.postgres_accounts import PostgresAccountStore
 from adapters.postgres_acl import PostgresAclStore
 from adapters.postgres_audit import PostgresAuditLog
 from adapters.postgres_doc_state import PostgresDocStateStore
@@ -31,7 +32,10 @@ from adapters.postgres_scanner import PostgresStateScanner
 from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
 from adapters.redis_bus import RedisEventBus
 from adapters.resilient_llm import ResilientLLM
+from adapters.routed_inspector import RoutedInspector
 from adapters.simple_chunker import ParagraphChunker
+from adapters.tenant_layout import TenantLayout
+from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
 from domain.ports import LLM, AclReader, DocStateStore, LexicalStore, Reranker, VectorStore
 from ingestion.consumer import IngestionConsumer
 from ingestion.purge import Purger
@@ -39,20 +43,16 @@ from ingestion.reconciler import Reconciler
 from ingestion.scheduler import run_periodically
 from ingestion.worker import IngestionWorker
 from serving.admin import admin_key_from_env, create_admin_router
+from serving.admin_users import create_users_router
 from serving.answer_service import AnswerService
 from serving.api import create_app
 from serving.auth import jwt_identity
-from serving.chaos_api import mount_chaos
-from adapters.postgres_accounts import PostgresAccountStore
-from serving.admin_users import create_users_router
 from serving.auth_api import create_auth_router
 from serving.auth_service import AuthService
 from serving.bootstrap import ensure_bootstrap_admin
-from adapters.routed_inspector import RoutedInspector
-from adapters.tenant_layout import TenantLayout
-from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
-from adapters.file_parsers import DefaultFileParser
-from adapters.local_blobs import LocalBlobStore
+from serving.chaos_api import mount_chaos
+from serving.planner import PlannedRetriever
+from serving.query_service import QueryService, Retriever
 
 DSN = os.environ.get("RAG_PG_DSN", "postgresql://localhost/rag")
 REDIS_URL = os.environ.get("RAG_REDIS_URL", "redis://localhost:6379/0")

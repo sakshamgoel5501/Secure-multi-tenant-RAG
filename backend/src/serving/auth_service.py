@@ -146,7 +146,7 @@ class AuthService:
             await self._audit.record(
                 AuditEntry(account.username, account.role.value, account.tenant, action, account.username)
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("audit write failed for %s", action, exc_info=True)
 
             

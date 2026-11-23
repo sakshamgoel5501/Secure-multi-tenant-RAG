@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence, AsyncIterator
+from collections.abc import AsyncIterator, Collection, Sequence
 from typing import Protocol
 
 from domain.models import (
@@ -9,11 +9,11 @@ from domain.models import (
     DocumentId,
     DocumentState,
     EmbeddedChunk,
+    ParsedFile,
     PromotionOutcome,
     SearchHit,
     SecurityContext,
     TenantId,
-    ParsedFile,
 )
 
 

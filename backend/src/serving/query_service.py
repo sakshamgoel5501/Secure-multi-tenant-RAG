@@ -129,7 +129,7 @@ class QueryService:
                 states = await self._state.get_many(
                     ctx.tenant_id, {h.document_id for h in candidates}
                 )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise StateUnavailable(f"document state unavailable: {exc!r}") from exc
         visible = [
             h

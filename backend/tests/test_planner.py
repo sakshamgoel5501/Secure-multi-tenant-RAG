@@ -6,7 +6,14 @@ from adapters.llm_decomposer import parse_parts
 from domain.errors import AuthzUnavailable, RetrievalUnavailable
 from domain.fusion import interleave
 from domain.models import (
-    ChunkId, DocumentId, GroupId, RetrievalSource, SearchHit, SecurityContext, TenantId, UserId,
+    ChunkId,
+    DocumentId,
+    GroupId,
+    RetrievalSource,
+    SearchHit,
+    SecurityContext,
+    TenantId,
+    UserId,
 )  # fmt: skip
 from serving.planner import PlannedRetriever
 from serving.query_service import RetrievalResult

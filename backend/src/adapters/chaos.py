@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Collection, Sequence, AsyncIterator
+from collections.abc import AsyncIterator, Collection, Sequence
 
 from domain.errors import AuthzUnavailable
 from domain.models import (

@@ -7,11 +7,11 @@ from admin_tokens import admin_headers
 from fastapi import FastAPI
 
 from adapters.memory_audit import InMemoryAuditLog
+from adapters.memory_blobs import InMemoryBlobStore
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocumentId, DocumentState, GroupId, PromotionOutcome, TenantId
 from ingestion.purge import Purger
 from serving.admin import create_admin_router
-from adapters.memory_blobs import InMemoryBlobStore
 
 T = TenantId("t1")
 OTHER = TenantId("t2")

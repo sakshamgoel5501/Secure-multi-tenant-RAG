@@ -16,3 +16,136 @@ cd backend && rag seed-users --password 'demo-password-1234'
 cd frontend && npm run lint && npm run build && npm run dev
 
 
+
+
+
+
+
+
+
+
+
+Run these in order. I haven't run them myself, so paste the first error.
+
+## 0. One-time setup (skip what you already have)
+
+```bash
+brew services start postgresql@16
+brew services start redis
+createdb rag          # skip if it exists
+createdb rag_test     # skip if it exists
+
+cd ~/Desktop/RAG/backend
+source ../venv/bin/activate
+pip install -e ".[dev,real,load,agent]"
+rag doctor            # Postgres, Redis and GCP should all say "ok"
+```
+
+## 1. Seed the users
+
+This only needs Postgres, not the server. It creates the `accounts` table if it doesn't exist.
+
+```bash
+rag seed-users --password 'demo-password-1234'
+```
+
+The password needs at least 12 characters, and every demo account shares it. It creates 22 accounts, with the password changes not forced:
+
+| Username | Role |
+|---|---|
+| `platform` | Platform administrator |
+| `t1-admin`, `t2-admin`, `t3-admin` | Tenant administrators |
+| `t1-eng`, `t1-hr`, `t1-fin` (same for `t2-`, `t3-`) | Users |
+| `t1-eng-admin`, `t1-hr-admin`, `t1-fin-admin` (same for `t2-`, `t3-`) | Group administrators |
+
+Running it again skips existing accounts, so it never overwrites a password someone changed. Because `platform` now exists, you don't need the `RAG_BOOTSTRAP_ADMIN_*` variables.
+
+## 2. Start the backend (terminal 1)
+
+```bash
+cd ~/Desktop/RAG/backend && source ../venv/bin/activate
+export RAG_JWT_SECRET=dev-secret-for-local-testing-0123456789
+export RAG_ADMIN_KEY=dev-secret-for-local-testing-0123456790
+rag serve --jwt --admin
+```
+
+Both secrets must be at least 32 characters. Wait for "Application startup complete". Add `--llm fake` if you want to skip Gemini, or `export GCP_PROJECT=$(gcloud config get-value project)` first to use it. Only one server can run at a time, because embedded Qdrant allows one process.
+
+## 3. Load the documents (terminal 2)
+
+You already loaded the corpus earlier, so check first:
+
+```bash
+psql rag -c "select tenant_id, count(*) from doc_state where active_version is not null group by 1"
+```
+
+If you see three tenants with 40 each, skip the load. Otherwise, with the server running:
+
+```bash
+cd ~/Desktop/RAG/backend && source ../venv/bin/activate
+rag load --tenants 3 --docs 40
+```
+
+## 4. Start the frontend (terminal 3)
+
+Check that `frontend/.env.local` contains only this line (the secrets and passwords are gone):
+
+```
+BACKEND_URL=http://localhost:8000
+```
+
+```bash
+cd ~/Desktop/RAG/frontend
+npm run lint && npm run build     # first time, paste any failure
+npm run dev
+```
+
+Open http://localhost:3000. Sign in as `platform` with `demo-password-1234`, then try `t1-eng` in a private window.
+
+## 5. Checks you haven't run yet
+
+**Tests:**
+```bash
+cd ~/Desktop/RAG/backend
+rag test
+rag test --all      # also Postgres, Redis and the real models
+```
+
+**Evaluation.** It needs a server started *without* `--jwt`, because the eval tool uses plain headers. In terminal 1, press `Ctrl+C`, then:
+
+```bash
+export RAG_PG_DSN=postgresql://localhost/rag
+rag serve                                    # no --jwt
+```
+
+In terminal 2:
+
+```bash
+rag eval --revocation --answer-sample 120
+```
+
+If the gate passes, you're back at your saved baseline. Restart with `rag serve --jwt --admin` afterwards, to use the UI again. Delete any documents you uploaded through the UI before running the eval, since they can slightly displace the golden documents.
+
+**Chaos and load (optional):**
+```bash
+rag serve --chaos          # then in another terminal:
+rag chaos-run
+rag serve                  # then:
+RAG_LOAD_ASK=0 rag loadtest -u 20
+```
+
+**A token for the MCP server (needs the `--jwt` server):**
+```bash
+rag token --username t1-eng --password 'demo-password-1234'
+```
+
+## If something fails
+
+- **"RAG_ADMIN=1 needs RAG_ADMIN_KEY of at least 32 characters":** the key is too short.
+- **Sign-in says incorrect username or password:** check that you seeded, and that the server was started with `--jwt`. Five wrong tries lock that account for 15 minutes.
+- **"Storage folder ./qdrant_data is already accessed":** another server is still running. Stop it first.
+- **The sidebar shows no pages for an account:** its role doesn't have access to them. Platform admins have no tenant pages by design.
+
+Paste the output of `rag seed-users` and the first error, if any.
+
+

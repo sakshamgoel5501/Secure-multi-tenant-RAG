@@ -1,6 +1,6 @@
 import json
 import time
-from collections.abc import Awaitable, Callable, AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Annotated, Any
 

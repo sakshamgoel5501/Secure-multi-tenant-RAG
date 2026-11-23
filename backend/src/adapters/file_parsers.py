@@ -79,7 +79,7 @@ class DefaultFileParser:
                     break  # parse() reports the length
         except FileRejected:
             raise
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("pdf could not be read", exc_info=True)
             raise FileRejected("the PDF could not be read") from None
         if not parts:
@@ -113,7 +113,7 @@ class DefaultFileParser:
                     cells = [c.text.strip() for c in row.cells]
                     if any(cells):
                         parts.append(" | ".join(cells))
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("docx could not be read", exc_info=True)
             raise FileRejected("the Word document could not be read") from None
         return "\n\n".join(parts)

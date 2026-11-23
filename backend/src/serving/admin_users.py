@@ -47,7 +47,7 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
             return
         try:
             await audit.record(AuditEntry(p.actor, p.role, p.tenant, f"denied:{action}", target))
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.exception("audit write failed while recording a denial")
         raise HTTPException(status_code=403, detail="only platform administrators manage accounts")
 
@@ -57,7 +57,7 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
         """No audit, no action."""
         try:
             await audit.record(AuditEntry(p.actor, p.role, tenant, action, target, detail))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("audit write failed: %r", exc)
             raise HTTPException(status_code=503, detail="audit log unavailable; no change was made") from exc
 

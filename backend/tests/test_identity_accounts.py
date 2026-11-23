@@ -2,9 +2,9 @@ from dataclasses import replace
 from typing import Annotated
 
 import httpx
+from account_helpers import make_account
 from fastapi import Depends, FastAPI
 
-from account_helpers import make_account
 from adapters.memory_accounts import InMemoryAccountStore
 from adapters.memory_audit import InMemoryAuditLog
 from domain.accounts import Account, Role

@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
 from domain.models import DocStatus, DocumentId, DocumentState, GroupId, TenantId
-from serving.admin import create_admin_router
 from domain.ops_ports import AuditEntry
+from serving.admin import create_admin_router
 
 KEY = "k" * 32
 T1, T2 = TenantId("t1"), TenantId("t2")

@@ -6,7 +6,16 @@ from adapters.memory_vector_store import InMemoryVectorStore
 from adapters.qdrant_stores import _slug
 from adapters.tenant_layout import TenantLayout
 from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
-from domain.models import Chunk, DocumentId, EmbeddedChunk, GroupId, SecurityContext, TenantId, UserId, make_chunk_id
+from domain.models import (
+    Chunk,
+    DocumentId,
+    EmbeddedChunk,
+    GroupId,
+    SecurityContext,
+    TenantId,
+    UserId,
+    make_chunk_id,
+)
 
 
 class MemVectors(InMemoryVectorStore):
@@ -58,7 +67,7 @@ async def test_each_tenant_lands_in_its_own_place_and_searches_only_there() -> N
 
 
 async def test_a_silo_is_created_and_ensured_once_even_under_concurrency() -> None:
-    routed, shared, made = vectors()
+    routed, _, made = vectors()
     vec = (await HashEmbedder().embed(["x"]))[0]
     await asyncio.gather(*(routed.upsert([EmbeddedChunk(chunk("t2", f"d{i}"), vec)]) for i in range(5)))
     assert made["t2"].ensured == 1 and len(made) == 1

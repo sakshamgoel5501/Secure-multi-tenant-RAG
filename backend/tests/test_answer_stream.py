@@ -4,7 +4,14 @@ from typing import Any
 
 from adapters.fake_llm import ExtractiveLLM
 from domain.models import (
-    ChunkId, DocumentId, GroupId, RetrievalSource, SearchHit, SecurityContext, TenantId, UserId,
+    ChunkId,
+    DocumentId,
+    GroupId,
+    RetrievalSource,
+    SearchHit,
+    SecurityContext,
+    TenantId,
+    UserId,
 )  # fmt: skip
 from serving.answer_service import GENERATION_DOWN, NO_INFO, AnswerService
 from serving.query_service import RetrievalResult

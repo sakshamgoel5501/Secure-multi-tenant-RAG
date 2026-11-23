@@ -2,14 +2,21 @@ from collections.abc import Collection
 from pathlib import Path
 
 import httpx
+from admin_tokens import admin_headers
 from fastapi import FastAPI
 
 from adapters.memory_audit import InMemoryAuditLog
 from adapters.memory_doc_state import InMemoryDocStateStore
-from admin_tokens import admin_headers
 from domain.models import (
-    ChunkId, DocStatus, DocumentId, DocumentState, GroupId,
-    RetrievalSource, SearchHit, SecurityContext, TenantId,
+    ChunkId,
+    DocStatus,
+    DocumentId,
+    DocumentState,
+    GroupId,
+    RetrievalSource,
+    SearchHit,
+    SecurityContext,
+    TenantId,
 )  # fmt: skip
 from serving.admin import create_admin_router
 
@@ -28,7 +35,8 @@ class Scanner:
 
 
 class Acls:
-    data = {(T1, D): frozenset({GroupId("eng")})}
+    def __init__(self) -> None:
+        self.data = {(T1, D): frozenset({GroupId("eng")})}
 
     async def list_acls(self, tenant_id: TenantId) -> dict[DocumentId, frozenset[GroupId]]:
         return {d: g for (t, d), g in self.data.items() if t == tenant_id}

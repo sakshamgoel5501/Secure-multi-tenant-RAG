@@ -2,10 +2,10 @@ import io
 import zipfile
 
 import pytest
+from file_samples import make_docx, make_pdf
 
 from adapters.file_parsers import DefaultFileParser
 from domain.errors import FileRejected
-from file_samples import make_docx, make_pdf
 
 P = DefaultFileParser()
 

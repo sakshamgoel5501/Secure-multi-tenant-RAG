@@ -5,7 +5,6 @@ from collections.abc import Sequence
 
 from fastembed import TextEmbedding
 
-
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_DIM = 384
 

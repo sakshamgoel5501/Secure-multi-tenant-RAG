@@ -1,8 +1,8 @@
 from __future__ import annotations
-from collections.abc import AsyncIterator
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 
 from domain.ports import LLM
 
@@ -72,7 +72,7 @@ class ResilientLLM:
                     started = True
                     yield chunk
                 return
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 if started or attempt + 1 >= self._max_attempts:
                     raise
                 log.warning("LLM stream failed before the first piece: %r", exc)

@@ -7,7 +7,16 @@ from adapters.qdrant_stores import QdrantVectorStore
 from adapters.routed_inspector import RoutedInspector
 from adapters.tenant_layout import TenantLayout
 from adapters.tenant_migration import move_tenant_points
-from domain.models import Chunk, DocumentId, EmbeddedChunk, GroupId, SecurityContext, TenantId, UserId, make_chunk_id
+from domain.models import (
+    Chunk,
+    DocumentId,
+    EmbeddedChunk,
+    GroupId,
+    SecurityContext,
+    TenantId,
+    UserId,
+    make_chunk_id,
+)
 
 POOL = TenantLayout("test-v1", ())
 SILO = TenantLayout("test-v1", {"t2"})

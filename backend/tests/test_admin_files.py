@@ -2,7 +2,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+from admin_tokens import admin_headers
 from fastapi import FastAPI
+from file_samples import make_docx, make_pdf
+from test_admin_lifecycle import Acls, Dlq, InlineBus, Scanner
 
 from adapters.fake_embedder import HashEmbedder
 from adapters.file_parsers import DefaultFileParser
@@ -11,12 +14,9 @@ from adapters.memory_blobs import InMemoryBlobStore
 from adapters.memory_doc_state import InMemoryDocStateStore
 from adapters.memory_vector_store import InMemoryVectorStore
 from adapters.simple_chunker import ParagraphChunker
-from admin_tokens import admin_headers
 from domain.models import DocumentId, GroupId, SecurityContext, TenantId, UserId
-from file_samples import make_docx, make_pdf
 from ingestion.worker import IngestionWorker
 from serving.admin import create_admin_router
-from test_admin_lifecycle import Acls, Dlq, InlineBus, Scanner
 
 KEY = "k" * 32
 T = TenantId("t1")
