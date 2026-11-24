@@ -20,6 +20,8 @@ PASSTHROUGH = {
     "mcp": "mcp_server.server",
     "seed-users": "ingestion.seed_users",
     "migrate-tenant": "ingestion.migrate_tenant",
+    "encrypt-blobs": "ingestion.encrypt_blobs", 
+    "tune-router": "eval.router_tune",
 }
 
 

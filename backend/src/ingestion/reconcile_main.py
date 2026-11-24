@@ -8,8 +8,8 @@ from pathlib import Path
 
 from qdrant_client import AsyncQdrantClient
 
+from adapters.blob_factory import make_blob_store
 from adapters.fastembed_embedder import FastEmbedEmbedder
-from adapters.local_blobs import LocalBlobStore
 from adapters.postgres_scanner import PostgresStateScanner
 from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
 from adapters.routed_inspector import RoutedInspector
@@ -46,7 +46,7 @@ async def run(tenants: int, docs: int, seed: int) -> None:
 
     scanner = PostgresStateScanner(dsn)
     await scanner.start()
-    blobs = LocalBlobStore(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")))
+    blobs = make_blob_store(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")), os.environ)
 
     # Stand-in for the upstream system, used for the synthetic corpus only.
     corpus, _ = generate_corpus(tenants, docs, seed)

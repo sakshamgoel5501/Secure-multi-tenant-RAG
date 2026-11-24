@@ -123,6 +123,7 @@ def _describe(state: DocumentState, groups: frozenset[GroupId]) -> dict[str, Any
         "pending": pending,
         "searchable": state.is_searchable,
         "groups": sorted(str(g) for g in groups),
+        "purged": state.purged,
     }
 
 
@@ -261,6 +262,7 @@ def create_admin_router(
                     "active_version": s.active_version,
                     "latest_seen_version": s.latest_seen_version,
                     "groups": sorted(str(g) for g in groups.get(s.document_id, frozenset())),
+                    "purged": s.purged,
                 }
                 for s in found[:limit]
             ],

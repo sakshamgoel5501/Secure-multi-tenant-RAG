@@ -27,12 +27,14 @@ CREATE TABLE IF NOT EXISTS doc_state (
     PRIMARY KEY (tenant_id, document_id),
     CHECK (active_version IS NULL OR active_version <= latest_seen_version)
 );
+ALTER TABLE doc_state ADD COLUMN IF NOT EXISTS purged boolean NOT NULL DEFAULT false;
 """
 
-_COLS = "tenant_id, document_id, latest_seen_version, active_version, deleted_version"
+_COLS = "tenant_id, document_id, latest_seen_version, active_version, deleted_version, purged"
+_INSERT_COLS = "tenant_id, document_id, latest_seen_version, active_version, deleted_version"
 
 _UPSERT_SEEN = f"""
-INSERT INTO doc_state ({_COLS}) VALUES ($1, $2, $3, NULL, NULL)
+INSERT INTO doc_state ({_INSERT_COLS}) VALUES ($1, $2, $3, NULL, NULL)
 ON CONFLICT (tenant_id, document_id) DO UPDATE
 SET latest_seen_version = GREATEST(doc_state.latest_seen_version, EXCLUDED.latest_seen_version)
 RETURNING {_COLS}
@@ -40,14 +42,14 @@ RETURNING {_COLS}
 
 # The compare-and-set. Zero rows updated means we lost (stale) or it was a duplicate.
 _CAS = """
-UPDATE doc_state SET active_version = $3
+UPDATE doc_state SET active_version = $3, purged = false
 WHERE tenant_id = $1 AND document_id = $2
   AND (active_version IS NULL OR active_version < $3)
   AND (deleted_version IS NULL OR deleted_version < $3)
 """
 
 _TOMBSTONE = f"""
-INSERT INTO doc_state ({_COLS}) VALUES ($1, $2, $3, NULL, $3)
+INSERT INTO doc_state ({_INSERT_COLS}) VALUES ($1, $2, $3, NULL, $3)
 ON CONFLICT (tenant_id, document_id) DO UPDATE
 SET latest_seen_version = EXCLUDED.latest_seen_version,
     deleted_version = GREATEST(COALESCE(doc_state.deleted_version, 0), EXCLUDED.deleted_version)
@@ -72,6 +74,7 @@ def _to_state(row: asyncpg.Record) -> DocumentState:
         latest_seen_version=row["latest_seen_version"],
         active_version=active,
         status=DocStatus.DELETED if is_deleted else DocStatus.ACTIVE,
+        purged=bool(row["purged"]),
     )
 
 
@@ -152,6 +155,11 @@ class PostgresDocStateStore:
         states = [_to_state(r) for r in rows]
         return {s.document_id: s for s in states}
     
+    async def mark_purged(self, tenant_id: TenantId, document_id: DocumentId) -> None:
+        await self._p().execute(
+            "UPDATE doc_state SET purged = true WHERE tenant_id = $1 AND document_id = $2",
+            tenant_id, document_id,
+        )  # fmt: skip
 
 
 

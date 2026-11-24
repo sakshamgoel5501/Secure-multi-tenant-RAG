@@ -12,6 +12,7 @@ type Doc = {
   active_version: number | null;
   latest_seen_version: number;
   groups: string[];
+  purged: boolean;
 };
 
 export default function DocumentsPage() {
@@ -113,7 +114,7 @@ export default function DocumentsPage() {
                   </Link>
                 </td>
                 <td className="px-4">
-                  <Badge variant={d.status === "active" ? "secondary" : "outline"}>{d.status}</Badge>
+                  <Badge variant={d.status === "active" ? "secondary" : "outline"}>{d.purged ? "purged" : d.status}</Badge>
                 </td>
                 <td className="px-4 tabular-nums text-muted-foreground">
                   v{d.active_version ?? "–"}

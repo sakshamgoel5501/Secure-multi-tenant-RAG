@@ -31,6 +31,7 @@ real = [
     "pypdf", 
     "python-docx", 
     "python-multipart",
+    "cryptography",
 ]
 load = ["locust"]
 agent = ["mcp>=1.2,<2"]

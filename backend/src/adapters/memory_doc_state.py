@@ -53,7 +53,7 @@ class InMemoryDocStateStore:
             if state.status is DocStatus.DELETED:
                 if version <= self._tombstones[key]:
                     return PromotionOutcome.STALE
-                self._states[key] = replace(state, active_version=version, status=DocStatus.ACTIVE)
+                self._states[key] = replace(state, active_version=version, status=DocStatus.ACTIVE, purged=False)
                 return PromotionOutcome.PROMOTED
 
             if state.active_version == version:
@@ -61,7 +61,7 @@ class InMemoryDocStateStore:
             if state.active_version is not None and version < state.active_version:
                 return PromotionOutcome.STALE
 
-            self._states[key] = replace(state, active_version=version)
+            self._states[key] = replace(state, active_version=version, purged=False)
             return PromotionOutcome.PROMOTED
 
     async def tombstone(
@@ -94,5 +94,10 @@ class InMemoryDocStateStore:
                 if (tenant_id, d) in self._states
             }
 
-
+    async def mark_purged(self, tenant_id: TenantId, document_id: DocumentId) -> None:
+        key = (tenant_id, document_id)
+        async with self._lock:
+            state = self._states.get(key)
+            if state is not None:
+                self._states[key] = replace(state, purged=True)
         

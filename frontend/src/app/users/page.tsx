@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/components/session-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { GROUPS, ROLE_LABEL, type Role } from "@/lib/roles";
 
@@ -15,7 +16,7 @@ type Row = {
   must_change_password: boolean;
   last_login: string;
 };
-const ROLES = Object.keys(ROLE_LABEL) as Role[];
+const ALL_ROLES = Object.keys(ROLE_LABEL) as Role[];
 const blank = { username: "", role: "user" as Role, tenant: "", groups: [] as string[], password: "" };
 
 export default function UsersPage() {
@@ -25,6 +26,9 @@ export default function UsersPage() {
   const [secret, setSecret] = useState<{ username: string; password: string } | null>(null);
   const [form, setForm] = useState(blank);
   const [busy, setBusy] = useState(false);
+  const { account } = useSession();
+  const tenantAdmin = account?.role === "tenant_admin";
+  const ROLES = tenantAdmin ? (["user", "group_admin"] as Role[]) : ALL_ROLES;
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +77,7 @@ export default function UsersPage() {
       body: JSON.stringify({
         username: form.username,
         role: form.role,
-        tenant: needsTenant ? form.tenant : null,
+        tenant: needsTenant ? (tenantAdmin ? account?.tenant : form.tenant) : null,
         groups: mode === "none" ? [] : form.groups,
         password: form.password || null,
       }),
@@ -125,7 +129,7 @@ export default function UsersPage() {
             <select className={field} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role, groups: [] })}>
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
             </select>
-            {needsTenant && (
+            {needsTenant && !tenantAdmin && (
               <input className={field} placeholder="tenant, e.g. tenant-1" value={form.tenant} onChange={(e) => setForm({ ...form, tenant: e.target.value })} />
             )}
             {mode !== "none" && (

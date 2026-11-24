@@ -168,6 +168,9 @@ class ChaosDocState:
         await self._faults.hit("state")
         return await self._inner.get_many(tenant_id, document_ids)
     
+    async def mark_purged(self, tenant_id: TenantId, document_id: DocumentId) -> None:
+        await self._inner.mark_purged(tenant_id, document_id)
+    
 
 
     

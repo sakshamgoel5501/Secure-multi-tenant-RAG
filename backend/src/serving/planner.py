@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 from domain.errors import AuthzUnavailable, RetrievalUnavailable, StateUnavailable
 from domain.fusion import interleave
@@ -20,15 +21,16 @@ class PlannedRetriever:
     Anything that goes wrong before retrieval falls back to the original question."""
 
     def __init__(
-        self, inner: Retriever, decomposer: Decomposer, *, timeout: float = 2.0, max_parts: int = 3
+        self, inner: Retriever, decomposer: Decomposer, *, timeout: float = 2.0, max_parts: int = 3, classifier: Callable[[str], Route] = classify,
     ) -> None:
         self._inner = inner
         self._decomposer = decomposer
         self._timeout = timeout
         self._max_parts = max_parts
+        self._classify = classifier
 
     async def retrieve_ex(self, ctx: SecurityContext, query: str, top_k: int) -> RetrievalResult:
-        if classify(query) is Route.SIMPLE:
+        if self._classify(query) is Route.SIMPLE:
             return await self._inner.retrieve_ex(ctx, query, top_k)
 
         try:

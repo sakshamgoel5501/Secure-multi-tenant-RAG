@@ -20,7 +20,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; roles: Role[] | "all
   { href: "/upload", label: "Upload", icon: Upload, roles: TENANT_ADMINS },
   { href: "/lifecycle", label: "Lifecycle", icon: GitBranch, roles: TENANT_ADMINS },
   { href: "/security", label: "Security", icon: ShieldCheck, roles: TENANT_ADMINS },
-  { href: "/users", label: "Users", icon: Users, roles: ["platform_admin"] },
+  { href: "/users", label: "Users", icon: Users, roles: ["platform_admin", "tenant_admin"] },
   { href: "/operations", label: "Operations", icon: Activity, roles: ["platform_admin"] },
   { href: "/evaluation", label: "Evaluation", icon: ListChecks, roles: ["platform_admin"] },
   { href: "/audit", label: "Audit", icon: ScrollText, roles: ["tenant_admin", "platform_admin"] },

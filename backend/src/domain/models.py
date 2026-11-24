@@ -44,6 +44,7 @@ class DocumentState:
     latest_seen_version: int  # highest version any event has announced (may be in progress)
     active_version: int | None  # version currently searchable (None = nothing yet)
     status: DocStatus
+    purged: bool = False
 
     def __post_init__(self) -> None:
         if self.active_version is not None and self.active_version > self.latest_seen_version:

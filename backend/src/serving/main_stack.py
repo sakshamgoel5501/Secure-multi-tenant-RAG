@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi import FastAPI
 from qdrant_client import AsyncQdrantClient
 from redis.asyncio import Redis
 
+from adapters.blob_factory import make_blob_store
 from adapters.chaos import (
     ChaosAcl,
     ChaosDocState,
@@ -23,12 +25,12 @@ from adapters.fastembed_reranker import FastEmbedReranker
 from adapters.file_parsers import DefaultFileParser
 from adapters.gemini_llm import GeminiLLM
 from adapters.llm_decomposer import LLMDecomposer
-from adapters.local_blobs import LocalBlobStore
 from adapters.postgres_accounts import PostgresAccountStore
 from adapters.postgres_acl import PostgresAclStore
 from adapters.postgres_audit import PostgresAuditLog
 from adapters.postgres_doc_state import PostgresDocStateStore
 from adapters.postgres_scanner import PostgresStateScanner
+from adapters.process_parser import ProcessFileParser
 from adapters.qdrant_stores import QdrantLexicalStore, QdrantVectorStore
 from adapters.redis_bus import RedisEventBus
 from adapters.resilient_llm import ResilientLLM
@@ -37,6 +39,7 @@ from adapters.simple_chunker import ParagraphChunker
 from adapters.tenant_layout import TenantLayout
 from adapters.tenant_routing import RoutedLexicalStore, RoutedVectorStore
 from domain.ports import LLM, AclReader, DocStateStore, LexicalStore, Reranker, VectorStore
+from domain.router import classify
 from ingestion.consumer import IngestionConsumer
 from ingestion.purge import Purger
 from ingestion.reconciler import Reconciler
@@ -58,6 +61,7 @@ DSN = os.environ.get("RAG_PG_DSN", "postgresql://localhost/rag")
 REDIS_URL = os.environ.get("RAG_REDIS_URL", "redis://localhost:6379/0")
 CHAOS = os.environ.get("RAG_CHAOS") == "1"
 ADMIN_KEY = admin_key_from_env(os.environ)  # exits at import time if enabled without a strong key
+AUDIT_QUERIES = os.environ.get("RAG_AUDIT_QUERIES") == "1"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -119,7 +123,7 @@ indexes = {
     "dense": RoutedInspector(qdrant, layout.dense_collection),
     "lexical": RoutedInspector(qdrant, layout.lexical_collection),
 }
-blobs = LocalBlobStore(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")))
+blobs = make_blob_store(Path(os.environ.get("RAG_BLOB_DIR", "data/blobs")), os.environ)
 purger = Purger(state, acl, indexes, bus, blobs=blobs)
 reconciler = Reconciler(scanner, indexes)  # no repair function: it only removes what is unreachable
 audit = PostgresAuditLog(DSN)
@@ -151,11 +155,15 @@ query_service = QueryService(
     retrieval_timeout=_env_float("RAG_RETRIEVAL_TIMEOUT", 2.0),
     rerank_timeout=_env_float("RAG_RERANK_TIMEOUT", 2.0),
 )
+_markers = tuple(m.strip() for m in os.environ.get("RAG_ROUTER_MARKERS", "").split(",") if m.strip())
+classifier = functools.partial(
+    classify, long_words=int(os.environ.get("RAG_ROUTER_LONG_WORDS", "12")), extra_markers=_markers
+)
 retriever: Retriever = (
     query_service
     if os.environ.get("RAG_PLANNER", "1") == "0"
     else PlannedRetriever(
-        query_service, LLMDecomposer(llm), timeout=_env_float("RAG_DECOMPOSE_TIMEOUT", 2.0)
+        query_service, LLMDecomposer(llm), timeout=_env_float("RAG_DECOMPOSE_TIMEOUT", 2.0), classifier=classifier
     )
 )
 answer_service = AnswerService(
@@ -166,7 +174,7 @@ _secret = os.environ.get("RAG_JWT_SECRET")
 accounts = PostgresAccountStore(DSN)
 auth_service = AuthService(accounts, audit, _secret, ADMIN_KEY) if _secret else None
 identity = jwt_identity(_secret, acl, accounts=accounts) if _secret else None
-NEEDS_ACCOUNTS = _secret is not None or ADMIN_KEY is not None
+NEEDS_ACCOUNTS = _secret is not None or ADMIN_KEY is not None or AUDIT_QUERIES
 print(f"[startup] identity: {'accounts (username and password)' if _secret else 'DEV HEADERS (insecure)'}")
 
 
@@ -214,7 +222,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await qdrant.close()
 
 
-app = create_app(query_service, lifespan=lifespan, answers=answer_service, identity=identity)
+app = create_app(query_service, lifespan=lifespan, answers=answer_service, identity=identity, audit=audit if AUDIT_QUERIES else None)
 if CHAOS:
     mount_chaos(app, faults)
     print("[startup] WARNING: chaos endpoint mounted at /chaos (never enable in production)")
@@ -235,8 +243,8 @@ if ADMIN_KEY is not None:
             accounts=accounts,
             searcher=query_service.retrieve,
             epochs=acl,
-            blobs=blobs, 
-            parser=DefaultFileParser(),
+            blobs=blobs,
+            parser=DefaultFileParser() if os.environ.get("RAG_PARSE_IN_PROCESS") == "0" else ProcessFileParser(),
         )
     )
     app.include_router(create_users_router(accounts, audit, admin_key=ADMIN_KEY))

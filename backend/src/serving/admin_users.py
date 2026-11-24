@@ -21,6 +21,7 @@ from domain.ops_ports import AccountStore, AuditEntry, AuditLog
 from serving.admin_auth import Principal, admin_identity
 
 log = logging.getLogger("rag.admin.users")
+TENANT_MANAGED = frozenset({Role.USER, Role.GROUP_ADMIN})
 
 
 class NewAccount(BaseModel):
@@ -37,19 +38,22 @@ class AccountPatch(BaseModel):
 
 
 def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: str) -> APIRouter:
-    """Account management. Platform administrators only: they provision identities, and have no
-    access to tenant data. Passwords are never logged or audited."""
+    """Platform administrators manage every account. Tenant administrators manage users and group
+    administrators of their own tenant. Passwords are never logged or audited."""
     who = Depends(admin_identity(admin_key, accounts))
     router = APIRouter(prefix="/admin/users")
 
-    async def platform(p: Principal, action: str, target: str = "") -> None:
+    def may_manage(p: Principal, tenant: str | None, role: Role) -> bool:
         if p.platform:
-            return
+            return True
+        return p.role == "tenant_admin" and tenant is not None and tenant == p.tenant and role in TENANT_MANAGED
+
+    async def denial(p: Principal, action: str, target: str, tenant: str | None) -> HTTPException:
         try:
-            await audit.record(AuditEntry(p.actor, p.role, p.tenant, f"denied:{action}", target))
+            await audit.record(AuditEntry(p.actor, p.role, tenant, f"denied:{action}", target))
         except Exception:
             log.exception("audit write failed while recording a denial")
-        raise HTTPException(status_code=403, detail="only platform administrators manage accounts")
+        return HTTPException(status_code=403, detail="outside your admin scope")
 
     async def record(
         p: Principal, tenant: str | None, action: str, target: str, detail: dict[str, Any]
@@ -61,10 +65,14 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
             log.warning("audit write failed: %r", exc)
             raise HTTPException(status_code=503, detail="audit log unavailable; no change was made") from exc
 
-    async def existing(username: str) -> Account:
+    async def target(p: Principal, username: str, action: str) -> Account:
         account = await accounts.get(username.strip().lower())
         if account is None:
-            raise HTTPException(status_code=404, detail="unknown account")
+            if p.platform:
+                raise HTTPException(status_code=404, detail="unknown account")
+            raise await denial(p, action, username, p.tenant)  # same answer as "not yours"
+        if not may_manage(p, account.tenant, account.role):
+            raise await denial(p, action, account.username, account.tenant)
         return account
 
     @router.get("")
@@ -73,19 +81,25 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
         limit: Annotated[int, Query(ge=1, le=500)] = 200,
         p: Principal = who,
     ) -> dict[str, Any]:
-        await platform(p, "user.list")
-        return {"accounts": [account_json(a) for a in await accounts.list_accounts(tenant, limit)]}
+        if p.platform:
+            scope = tenant
+        elif p.role == "tenant_admin" and tenant in (None, p.tenant):
+            scope = p.tenant
+        else:
+            raise await denial(p, "user.list", "", tenant or p.tenant)
+        return {"accounts": [account_json(a) for a in await accounts.list_accounts(scope, limit)]}
 
     @router.post("", status_code=201)
     async def create(body: NewAccount, p: Principal = who) -> dict[str, Any]:
-        await platform(p, "user.create", body.username)
         username = body.username.strip().lower()
+        role, tenant = Role(body.role), body.tenant or None
+        if not may_manage(p, tenant, role):
+            raise await denial(p, "user.create", username, tenant)
         if not USERNAME.match(username):
             raise HTTPException(
                 status_code=422,
                 detail="usernames are 3-32 characters: lowercase letters, digits, dot, dash, underscore",
             )
-        role, tenant = Role(body.role), body.tenant or None
         groups = tuple(sorted(set(body.groups)))
         try:
             validate_membership(role, tenant, groups)
@@ -115,8 +129,7 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
 
     @router.patch("/{username}")
     async def update(username: str, body: AccountPatch, p: Principal = who) -> dict[str, Any]:
-        await platform(p, "user.update", username)
-        account = await existing(username)
+        account = await target(p, username, "user.update")
         if body.disabled and account.username == p.actor:
             raise HTTPException(status_code=400, detail="you can't disable your own account")
         groups = account.groups if body.groups is None else tuple(sorted(set(body.groups)))
@@ -138,8 +151,7 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
 
     @router.post("/{username}/reset-password")
     async def reset_password(username: str, p: Principal = who) -> dict[str, Any]:
-        await platform(p, "user.reset_password", username)
-        account = await existing(username)
+        account = await target(p, username, "user.reset_password")
         if account.username == p.actor:
             raise HTTPException(status_code=400, detail="change your own password from the Account page")
         temporary = generate_password()
@@ -158,8 +170,7 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
 
     @router.delete("/{username}")
     async def delete(username: str, p: Principal = who) -> dict[str, str]:
-        await platform(p, "user.delete", username)
-        account = await existing(username)
+        account = await target(p, username, "user.delete")
         if account.username == p.actor:
             raise HTTPException(status_code=400, detail="you can't delete your own account")
         await record(p, account.tenant, "user.delete", account.username, {"role": account.role.value})
@@ -167,4 +178,5 @@ def create_users_router(accounts: AccountStore, audit: AuditLog, *, admin_key: s
         return {"deleted": account.username}
 
     return router
+
 

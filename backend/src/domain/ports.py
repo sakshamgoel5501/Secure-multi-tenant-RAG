@@ -69,6 +69,10 @@ class DocStateStore(Protocol):
         """Batch read for the query path. Unknown documents are simply absent."""
         ...
 
+    async def mark_purged(self, tenant_id: TenantId, document_id: DocumentId) -> None:
+        """Record that every stored copy of the content was erased. A newer version clears it."""
+        ...
+
 
 class VectorStore(Protocol):
     """Dense similarity index. Eventually consistent; NOT the security authority."""

@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
@@ -10,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from domain.errors import AuthzUnavailable, RetrievalUnavailable, StateUnavailable
 from domain.models import GroupId, SecurityContext, TenantId, UserId
+from domain.ops_ports import AuditEntry, AuditLog
 from domain.tracing import finish_trace, start_trace
 from serving.answer_service import AnswerService
 from serving.query_service import QueryService
@@ -92,9 +95,26 @@ def create_app(
     answers: AnswerService | None = None,
     identity: Callable[..., Any] | None = None,
     stats: StageStats | None = None,
+    audit: AuditLog | None = None,
 ) -> FastAPI:
     app = FastAPI(title="RAG", lifespan=lifespan)
     collector = stats if stats is not None else StageStats()
+    pending: set[asyncio.Task[None]] = set()
+
+    def note_query(ctx: SecurityContext, action: str, detail: dict[str, object]) -> None:
+        if audit is None:
+            return
+        log = audit
+
+        async def write() -> None:
+            try:
+                await log.record(AuditEntry(str(ctx.user_id), "user", str(ctx.tenant_id), action, "", detail))
+            except Exception:
+                logging.getLogger("rag.audit").warning("query audit failed", exc_info=True)
+
+        task = asyncio.create_task(write())
+        pending.add(task)
+        task.add_done_callback(pending.discard)
     ctx_dep: Callable[..., Any] = identity if identity is not None else get_security_context
 
     @app.exception_handler(AuthzUnavailable)
@@ -141,6 +161,7 @@ def create_app(
         ctx: Annotated[SecurityContext, Depends(ctx_dep)],
     ) -> SearchResponse:
         hits = await service.retrieve(ctx, body.query, body.top_k)
+        note_query(ctx, "query.search", {"chars": len(body.query), "hits": len(hits)})
         return SearchResponse(
             hits=[
                 HitOut(
@@ -166,6 +187,7 @@ def create_app(
             ctx: Annotated[SecurityContext, Depends(ctx_dep)],
         ) -> AskResponse:
             result = await answers.ask(ctx, body.question, body.top_k)
+            note_query(ctx, "query.ask", {"chars": len(body.question), "grounded": result.grounded, "citations": len(result.citations), "degraded": list(result.degraded)})
             return AskResponse(
                 answer=result.text,
                 grounded=result.grounded,
@@ -194,6 +216,7 @@ def create_app(
             # Retrieval and authorization happen here, before any bytes are sent, so a failure is
             # still a clean 503 and not a broken stream.
             prepared = await answers.prepare(ctx, body.question, body.top_k)
+            note_query(ctx, "query.ask", {"chars": len(body.question), "sources": len(prepared.sources), "stream": True})
 
             async def events() -> AsyncIterator[str]:
                 async for name, payload in answers.stream(prepared):

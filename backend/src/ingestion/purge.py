@@ -92,6 +92,7 @@ class Purger:
                 if versions:
                     deleted[name] += await idx.delete_versions(tenant, doc, set(versions))
         blobs = await self._blobs.delete_document(tenant, doc) if self._blobs else 0
+        await self._states.mark_purged(tenant, doc)
         return PurgeReport(deleted, events, had_acl, epoch, await self.footprint(tenant, doc), blobs)
     
     

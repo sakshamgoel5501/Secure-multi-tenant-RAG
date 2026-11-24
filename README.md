@@ -241,8 +241,14 @@ versions, tombstones and out-of-order events on a throwaway document.
   large tenants (`backend/src/adapters/tenant_routing.py`).
 - **One ACL epoch row serializes ACL writes.** Fine for ACL change rates; the next step is batching
   or a Zanzibar-style store.
-- **Reads are only partly audited.** Administrative changes, denials, sign-ins and some admin reads
-  are recorded. End-user searches and questions are not.
+- **Query auditing is opt-in** (`RAG_AUDIT_QUERIES=1`) and records shape, never text: who, when, question
+  length, result counts. Tenant administrators can read it; it has no retention job.
+- **Tenant administrators manage users and group administrators** of their own tenant. Only platform
+  administrators create tenant or platform administrators.
+- **Stored files are encrypted** when `RAG_BLOB_KEY` is set (Fernet, location-bound, rotation by listing
+  several keys). Keys live in the environment, so this protects the disk, not a compromised server.
+- **Uploads are parsed in a killable child process** (`backend/src/adapters/process_parser.py`). The
+  memory cap works on Linux only; macOS relies on the timeout.
 - **Gemini is not deterministic**, and the eval corpus is synthetic, so scores will not transfer to
   real documents without a human-labelled set.
 - **Query routing is a heuristic.** A rule decides whether a question looks multi-part, and only then

@@ -105,4 +105,16 @@ async def test_concurrent_promotes_converge_to_highest_version(
         assert PromotionOutcome.ALREADY_ACTIVE not in results  # every version is unique
 
 
+async def test_purged_flag_is_set_and_cleared_by_a_newer_version(store: PostgresDocStateStore) -> None:
+    await store.promote(T, D, 1)
+    await store.tombstone(T, D, 2)
+    await store.mark_purged(T, D)
+    s = await store.get(T, D)
+    assert s is not None and s.purged
+    await store.promote(T, D, 3)
+    s = await store.get(T, D)
+    assert s is not None and not s.purged
+
+    
+
         

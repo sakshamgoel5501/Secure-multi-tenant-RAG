@@ -240,5 +240,16 @@ async def test_access_cannot_be_changed_on_a_deleted_document(tmp_path: Path) ->
     assert r.status_code == 409
     assert (T, D) not in e.acls.data
 
+
+async def test_a_purged_document_is_marked_and_a_new_version_clears_it() -> None:
+    e = await env()
+    await e.purger.purge(T, D)
+    s = await e.state.get(T, D)
+    assert s is not None and s.purged
+    await e.state.promote(T, D, 5)
+    s = await e.state.get(T, D)
+    assert s is not None and not s.purged
+
+    
     
     

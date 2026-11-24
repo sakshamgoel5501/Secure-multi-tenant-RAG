@@ -47,11 +47,43 @@ async def make_user(env: Env, **extra: Any) -> httpx.Response:
     return await env.client.post("/admin/users", json=body, headers=env.root)
 
 
-async def test_only_platform_administrators_manage_accounts() -> None:
+async def test_group_administrators_cannot_manage_accounts() -> None:
     env = await build()
-    assert (await env.client.get("/admin/users", headers=env.boss)).status_code == 403
+    gwen = make_account("gwen", Role.GROUP_ADMIN, "t1", ("hr",))
+    await env.store.create(gwen)
+    headers = {"Authorization": f"Bearer {env.service.issue(gwen)}"}
+    assert (await env.client.get("/admin/users", headers=headers)).status_code == 403
     assert env.audit.entries[-1].action == "denied:user.list"
     assert (await env.client.get("/admin/users")).status_code == 401
+
+
+async def test_a_tenant_administrator_manages_accounts_in_their_own_tenant() -> None:
+    env = await build()
+    body = {"username": "carol", "role": "user", "tenant": "t1", "groups": ["eng"], "password": STRONG}
+    assert (await env.client.post("/admin/users", json=body, headers=env.boss)).status_code == 201
+    listing = await env.client.get("/admin/users", headers=env.boss)
+    assert {a["username"] for a in listing.json()["accounts"]} == {"boss", "carol"}
+    assert (await env.client.patch("/admin/users/carol", json={"disabled": True}, headers=env.boss)).status_code == 200
+    assert (await env.client.post("/admin/users/carol/reset-password", headers=env.boss)).status_code == 200
+    assert (await env.client.delete("/admin/users/carol", headers=env.boss)).status_code == 200
+
+
+async def test_a_tenant_administrator_cannot_cross_tenants_or_mint_administrators() -> None:
+    env = await build()
+    base = {"username": "dave", "role": "user", "groups": ["eng"], "password": STRONG}
+    assert (await env.client.post("/admin/users", json={**base, "tenant": "t2"}, headers=env.boss)).status_code == 403
+    for role in ("tenant_admin", "platform_admin"):
+        r = await env.client.post("/admin/users", json={**base, "role": role, "groups": [], "tenant": "t1"}, headers=env.boss)
+        assert r.status_code == 403
+    assert (await env.client.get("/admin/users", params={"tenant": "t2"}, headers=env.boss)).status_code == 403
+    assert env.audit.entries[-1].action.startswith("denied:")
+
+    await make_user(env, username="erin", tenant="t2")
+    other = await env.client.patch("/admin/users/erin", json={"disabled": True}, headers=env.boss)
+    missing = await env.client.patch("/admin/users/nobody", json={"disabled": True}, headers=env.boss)
+    assert other.status_code == missing.status_code == 403  # no way to probe other tenants' names
+    for name in ("root", "boss"):  # platform admin and themselves
+        assert (await env.client.patch(f"/admin/users/{name}", json={"disabled": True}, headers=env.boss)).status_code == 403
 
 
 async def test_create_generates_a_one_time_password_that_must_be_changed() -> None:
