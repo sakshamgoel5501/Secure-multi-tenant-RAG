@@ -275,8 +275,14 @@ def create_admin_router(
                 "keep your own group on the document; a tenant administrator can remove it",
             )  # fmt: skip
         tenant_id, doc_id = TenantId(body.tenant_id), DocumentId(document_id)
-        if await states.get(tenant_id, doc_id) is None:
+        state = await states.get(tenant_id, doc_id)
+        if state is None:
             raise HTTPException(status_code=404, detail="unknown document")
+        if state.status is DocStatus.DELETED:
+            raise HTTPException(
+                status_code=409,
+                detail="this document is deleted; publish a new version to bring it back, then set its access",
+            )
         before = (await acls.list_acls(tenant_id)).get(doc_id, frozenset())
         await record(
             p, body.tenant_id, "acl.set", document_id,

@@ -22,6 +22,7 @@ export default function DocumentsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   useEffect(() => {
     if (!tenant) return;
@@ -85,6 +86,11 @@ export default function DocumentsPage() {
         </p>
       </header>
 
+      <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+        Show deleted and purged documents ({docs.filter((d) => d.status === "deleted").length})
+      </label>
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="overflow-x-auto rounded-lg border">
@@ -99,7 +105,7 @@ export default function DocumentsPage() {
             </tr>
           </thead>
           <tbody>
-            {docs.map((d) => (
+            {docs.filter((d) => showDeleted || d.status !== "deleted").map((d) => (
               <tr key={d.document_id} className="h-16 border-b last:border-0">
                 <td className="px-4 font-mono text-xs">
                   <Link href={`/documents/${d.document_id}?tenant=${tenant}`} className="underline-offset-4 hover:underline">
@@ -118,8 +124,14 @@ export default function DocumentsPage() {
                     {GROUPS.map((g) => (
                       <button
                         key={g}
-                        disabled={saving !== null || g === own}
-                        title={g === own ? "Group administrators keep their own group" : undefined}
+                        disabled={saving !== null || g === own || d.status === "deleted"}
+                        title={
+                          d.status === "deleted"
+                            ? "Deleted: publish a new version to bring it back"
+                            : g === own
+                              ? "Group administrators keep their own group"
+                              : undefined
+                        }
                         onClick={() => toggle(d, g)}
                         className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-60 ${
                           d.groups.includes(g) ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"

@@ -232,5 +232,13 @@ async def test_the_footprint_route_lists_stored_files(tmp_path: Path) -> None:
     assert body["files"] == [{"version": 1, "kind": "text", "bytes": 3}] and body["blobs"] == 1
 
 
+async def test_access_cannot_be_changed_on_a_deleted_document(tmp_path: Path) -> None:
+    e = await env()
+    c = await client(e, tmp_path)
+    await c.post("/admin/documents/d1/purge", params={"tenant": "t1"}, headers=H)
+    r = await c.put("/admin/documents/d1/acl", json={"tenant_id": "t1", "groups": ["eng"]}, headers=H)
+    assert r.status_code == 409
+    assert (T, D) not in e.acls.data
+
     
     
