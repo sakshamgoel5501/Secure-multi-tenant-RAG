@@ -1,0 +1,51 @@
+Database, right now it's in memory - how can we migrate it to cloud ? If the app is hosted, how will the data be stored ?
+
+Is this system same as what organizations use as their website's chatbots ?
+
+Scale to how many users ? Concurrent users ? If a website is hosted on a server, how is it handled when multiple people use the app, is there any queue holding requests ?
+
+Storing actual files and their content ? Is it safe ? How is it done for organizations ?
+
+
+
+
+
+## Pending batches
+
+| # | Batch | What it covers | Complexity | Needs |
+|---|---|---|---|---|
+| 1 | **VM deployment and benchmark** | Run the Dockerfiles and Compose file (never run yet), a second machine for Locust, the first publishable p95. | Medium to large. Expect several fix rounds. | A Linux VM, and GCP credits |
+| 2 | **MCP agent** | A small agent that uses the MCP tools, plus a test that a hostile document can't make it act outside its tenant. | Small to medium | Gemini access |
+| 3 | **Embedder fine-tune** | Train on hard negatives, then re-run the eval for before and after numbers. | Medium to large | Your Mac for a small model, or a GPU machine |
+| 4 | **README polish** | Screenshots, the VM numbers once they exist, and a pass over the README and DESIGN for anything stale. | Small | Screenshots from your running app, and batch 1 for the numbers |
+
+Two cautions:
+- **Batch 1:** the MCP server and Locust now need a real account, so the benchmark steps have changed since I first wrote them. The earlier deployment instructions also predate accounts, streaming, silos and file storage. I'll redo them against the current code, and they will need changes such as a blobs volume and a request-size limit in Caddy.
+- **Batch 3:** your recall is already 1.000 and MRR is 0.918, on an easy synthetic corpus. The gains may be small, so I'd frame it as showing the method.
+
+## Checks you haven't run since the recent parts
+
+These aren't batches, but they could turn up bugs, because `rag test` doesn't touch the real Qdrant, Gemini or the browser.
+- `rag eval --revocation --answer-sample 120` against a server started without `--jwt`. I rewrote the answer service and query service, so I'd like to see the gate still pass.
+- Gemini streaming. I wrote it from the documented shape and haven't confirmed it.
+- Silo migration with the real Qdrant, including the keyword index.
+- File uploads of a real PDF and a real Word file.
+- The sign-in flows from the UI: forced password change, lockout, disable and reset.
+
+## Optional, for later
+
+- Sign-in through an identity provider, so roles come from outside the app.
+- Sign-in through an identity provider (OIDC), mapping a verified email to an account.
+- OCR for scanned PDFs, .doc and images, through optional Tesseract and LibreOffice if installed.
+- Email-based password reset and multi-factor sign-in.
+- Email password reset, behind a mail port with an SMTP adapter and a console adapter for development.
+- Authenticator-app MFA (TOTP) with recovery codes.
+- Moving tenants between pool and silo from the UI. It needs ingestion paused during the move and a Qdrant server, since embedded mode can’t run two processes. I’ll build it as an admin maintenance action, and I’ll tell you if I think it’s unsafe to do live.
+
+
+
+
+
+
+
+

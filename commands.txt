@@ -4,6 +4,10 @@ pytest -v
 mypy src tests
 ruff check . --fix
 
+RAG_AUDIT_QUERIES is an environment variable flag (checked as RAG_AUDIT_QUERIES=1) in your RAG backend (backend/src/serving/main_stack.py and backend/src/serving/api.py) that enables opt-in audit logging of end-user search and question activity by shape only—never raw text.
+
+Generate a key (command in blob_factory.py), export RAG_BLOB_KEY, restart, upload a file, and cat the files under data/blobs. They should be unreadable. For older files, run RAG_BLOB_ALLOW_PLAINTEXT=1 rag encrypt-blobs.
+
 Make RAG_ADMIN_KEY at least 32 characters. openssl rand -hex 24 gives 48, which is fine, but a shorter value now stops the backend from starting
 
 
@@ -153,5 +157,54 @@ rag token --username t1-eng --password 'demo-password-1234'
 - **The sidebar shows no pages for an account:** its role doesn't have access to them. Platform admins have no tenant pages by design.
 
 Paste the output of `rag seed-users` and the first error, if any.
+
+
+
+
+
+
+
+
+- Tuning the router's thresholds against your own questions.
+
+In your RAG system, the router (`classify()` in `backend/src/domain/router.py`) is the fast gatekeeper that decides whether an incoming question can be answered with **one normal search** (`Route.SIMPLE`) or should be **split into sub-questions** (`Route.MULTI`) before searching.
+
+**Tuning the router's thresholds** adjusts the word-count cutoff (`RAG_ROUTER_LONG_WORDS`, default `12`) so that the router splits your actual users' complex questions without wasting extra LLM decomposition calls on long, single-topic questions.
+
+---
+
+### Concrete Example
+
+Suppose you run `rag tune-router` against a small set of real questions from your users (`data/router_labels.json`):
+
+1. **Simple question (14 words, contains "and", only 1 topic):**
+> *"Can you tell me the exact deadline for submitting my annual travel and expense report?"*
+
+
+* **Expected label:** `multi: false` (one search on the expense policy finds this).
+* **With default `long_words = 12`:** It has 14 words (≥ 12) and contains `"and"`, so the router **wrongly** classifies it as `MULTI` (a false positive) and triggers an unnecessary query-decomposition LLM call.
+
+
+2. **Multi-part question (16 words, contains "and", 2 distinct topics):**
+> *"What is our parental leave duration and how do I apply for remote work afterward?"*
+
+
+* **Expected label:** `multi: true` (needs two separate searches: parental leave + remote work).
+* **With `long_words = 16`:**
+* Question #1 (14 words) is now below 16 → classified as `SIMPLE` (no wasted LLM call).
+* Question #2 (16 words) is ≥ 16 and has `"and"` → still classified as `MULTI` (properly decomposed).
+
+
+
+
+3. **What `rag tune-router` outputs:**
+It sweeps `long_words` from `6` to `24` (step `2`) across all your labeled questions, prints precision, recall, and F1 for each threshold, and tells you the exact setting to export—for example:
+```text
+best F1 0.92 at RAG_ROUTER_LONG_WORDS=16
+
+```
+
+
+You then set `RAG_ROUTER_LONG_WORDS=16` in your environment so production traffic uses that tuned cutoff instead of the default `12`.
 
 
